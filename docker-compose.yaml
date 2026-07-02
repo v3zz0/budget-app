@@ -1,0 +1,14 @@
+version: "3"
+
+services:
+  frontend:
+    # Build locale. In produzione puoi usare `image: <tuo-registry>/budget-app:<tag>`.
+    build:
+      context: .
+      args:
+        # URL del backend Strapi usato in fase di build (baked nel bundle Vite).
+        VITE_API_URL: http://localhost:1337
+    container_name: budget-app
+    ports:
+      - "8017:80"
+    restart: unless-stopped
