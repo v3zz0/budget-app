@@ -1,0 +1,23 @@
+# Niente segreti e niente dati nell'immagine (che su ghcr e' PUBBLICA): i valori veri
+# arrivano a runtime dalle variabili del container (stack Portainer con .env.production).
+.env
+.env.*
+!.env.example
+*.sql
+node_modules
+.git
+.gitignore
+.strapi
+.strapi-updater.json
+.cache
+build
+dist
+.tmp
+*.log
+public/uploads/*
+!public/uploads/.gitkeep
+screenshots
+tests
+pushDocker.sh
+README*.md
+docker-compose*.y*ml

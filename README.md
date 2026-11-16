@@ -120,7 +120,7 @@ schermata di login dell'app, oppure via API:
 ```bash
 curl -X POST http://localhost:1337/api/auth/local/register \
   -H 'Content-Type: application/json' \
-  -d '{"username":"mario","email":"mario@esempio.it","password":"unaPasswordSolida"}'
+  -d '{"username":"mario","email":"mario@esempio.it","password":"<password>"}'
 ```
 
 ### Variabili d'ambiente (`.env`)
