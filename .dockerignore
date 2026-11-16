@@ -21,3 +21,4 @@ tests
 pushDocker.sh
 README*.md
 docker-compose*.y*ml
+Jenkinsfile
