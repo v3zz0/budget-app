@@ -6,6 +6,7 @@ import { useDashboardStore } from "@/stores/dashboard.js";
 import { useWalletStore } from "@/stores/wallet.js";
 import { aggiornaTransazione, creaTransazione, trovaTransazione } from "@/services/transazioni.js";
 import { erroreLeggibile } from "@/services/api.js";
+import { erroreScontrino, leggiScontrino } from "@/services/scontrino.js";
 import { dataDaIso, isoDaData } from "@/utils/budget.js";
 
 // id presente (dalla route) = modifica, assente = nuova
@@ -26,6 +27,9 @@ const form = reactive({
 });
 const caricamento = ref(true);
 const salvataggio = ref(false);
+const scansione = ref(false);
+const righeLette = ref(null); // solo se il totale non è stato riconosciuto
+const inputFoto = ref(null);
 
 const categorie = computed(() =>
   dashboard.categorie.map((c) => ({ value: c.documentId, label: `${c.icona || ""} ${c.Nome}`.trim() })),
@@ -59,6 +63,30 @@ onMounted(async () => {
   }
 });
 
+// Foto dello scontrino -> importo e negozio precompilati. Il salvataggio resta
+// manuale: qui si riempiono solo i campi, li controlli tu.
+async function scansiona(e) {
+  const foto = e.target.files[0];
+  e.target.value = ""; // permette di riscegliere lo stesso file
+  if (!foto) return;
+  scansione.value = true;
+  righeLette.value = null;
+  try {
+    const dati = await leggiScontrino(foto);
+    if (dati.totale != null) form.importo = dati.totale;
+    // La descrizione non sovrascrive mai quello che hai già scritto.
+    if (dati.descrizione && !form.descrizione) form.descrizione = dati.descrizione;
+    // Senza totale si mostra cosa ha letto l'OCR: in dieci secondi si capisce
+    // se il problema è la foto o il parser, invece di ragionare al buio.
+    if (dati.totale == null) righeLette.value = dati.righeLette ?? [];
+    else toast.add({ severity: "success", summary: "Importo letto: controllalo prima di salvare", life: 3500 });
+  } catch (err) {
+    errore(erroreScontrino(err));
+  } finally {
+    scansione.value = false;
+  }
+}
+
 async function salva() {
   salvataggio.value = true;
   try {
@@ -86,6 +114,28 @@ async function salva() {
     </div>
 
     <form v-else class="flex max-w-lg flex-col gap-5 rounded-2xl border border-bordo bg-card p-5" @submit.prevent="salva">
+      <!-- Scansione scontrino: solo per le nuove -->
+      <div v-if="!props.id" class="flex flex-col gap-2">
+        <input ref="inputFoto" type="file" accept="image/*" class="hidden" @change="scansiona" />
+        <Button
+          type="button"
+          :label="scansione ? 'Leggo lo scontrino…' : 'Scansiona scontrino'"
+          icon="pi pi-camera"
+          severity="secondary"
+          outlined
+          :loading="scansione"
+          @click="inputFoto.click()"
+        />
+        <p class="text-xs text-testo2">La foto viene letta sul server e cancellata subito dopo: non viene salvata.</p>
+        <div v-if="righeLette" class="rounded-xl border border-avviso/40 bg-avviso/10 p-3 text-sm">
+          <p class="text-testo">Totale non riconosciuto, scrivilo a mano.</p>
+          <details class="mt-2">
+            <summary class="cursor-pointer text-testo2">Cosa ho letto</summary>
+            <p v-if="!righeLette.length" class="mt-2 text-xs text-testo2">Nessun testo riconosciuto: rifai la foto con più luce.</p>
+            <pre v-else class="mt-2 whitespace-pre-wrap text-xs text-testo2">{{ righeLette.join("\n") }}</pre>
+          </details>
+        </div>
+      </div>
       <div class="flex flex-col gap-2">
         <label for="categoria" class="text-sm text-testo2">Categoria</label>
         <Select
