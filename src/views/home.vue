@@ -98,6 +98,7 @@ function elimina(t) {
             class="pointer-events-none absolute -right-0.5 top-0 grid min-w-4 place-items-center rounded-full bg-errore px-1 text-[10px] font-bold text-fondo"
           >{{ consigli.nonLetti }}</span>
         </span>
+        <Button icon="pi pi-replay" text rounded severity="secondary" aria-label="Ricorrenti" class="md:hidden" @click="router.push('/ricorrenti')" />
         <Button icon="pi pi-chart-bar" text rounded severity="secondary" aria-label="Riepilogo anno" @click="router.push('/anno')" />
         <Button icon="pi pi-download" text rounded severity="secondary" aria-label="Esporta CSV" @click="router.push('/export')" />
       </div>

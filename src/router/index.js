@@ -8,6 +8,7 @@ import Ricorrenti from "../views/ricorrenti.vue";
 import Consigli from "../views/consigli.vue";
 import Anno from "../views/anno.vue";
 import Export from "../views/export.vue";
+import Analisi from "../views/analisi.vue";
 import Impostazioni from "../views/setting.vue";
 
 export const router = createRouter({
@@ -22,6 +23,7 @@ export const router = createRouter({
     { path: "/consigli", name: "consigli", component: Consigli },
     { path: "/anno", name: "anno", component: Anno },
     { path: "/export", name: "export", component: Export },
+    { path: "/analisi", name: "analisi", component: Analisi },
     { path: "/impostazioni", name: "impostazioni", component: Impostazioni, meta: { title: "Impostazioni" } },
     { path: "/:catchAll(.*)", redirect: "/" },
   ],

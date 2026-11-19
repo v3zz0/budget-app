@@ -11,12 +11,17 @@ const toast = useToast();
 const auth = useAuthStore();
 const walletStore = useWalletStore();
 
+// `mobile`: stanno anche nella barra in basso (4 voci attorno al +; con di più
+// non c'è posto su 360px). Le altre si raggiungono dalla barra in alto su
+// desktop e dalla home.
 const voci = [
-  { label: "Home", icon: "pi pi-home", to: "/" },
-  { label: "Salvadanaio", icon: "pi pi-wallet", to: "/risparmio" },
+  { label: "Home", icon: "pi pi-home", to: "/", mobile: true },
+  { label: "Salvadanaio", icon: "pi pi-wallet", to: "/risparmio", mobile: true },
   { label: "Ricorrenti", icon: "pi pi-replay", to: "/ricorrenti" },
-  { label: "Impostazioni", icon: "pi pi-cog", to: "/impostazioni" },
+  { label: "Analisi", icon: "pi pi-file-check", to: "/analisi", mobile: true },
+  { label: "Impostazioni", icon: "pi pi-cog", to: "/impostazioni", mobile: true },
 ];
+const vociMobile = voci.filter((v) => v.mobile);
 
 const wallet = computed({
   get: () => walletStore.selectedWallet,
@@ -82,7 +87,7 @@ function esci() {
   >
     <!-- 4 voci attorno al + (colonna 3): le prime due a sinistra, le altre a destra -->
     <router-link
-      v-for="(v, i) in voci"
+      v-for="(v, i) in vociMobile"
       :key="v.to"
       :to="v.to"
       class="flex flex-col items-center gap-1 py-2 text-[11px] text-testo2"
