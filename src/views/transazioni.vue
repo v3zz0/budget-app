@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
 import { useDashboardStore } from "@/stores/dashboard.js";
@@ -38,13 +38,18 @@ const valido = computed(() => form.categoriaId && form.importo !== null);
 
 const errore = (detail) => toast.add({ severity: "error", summary: "Errore", detail, life: 4000 });
 
+// Le categorie non dipendono dal mese, ma stanno nello store della dashboard.
+// Con un link diretto o un refresh i portafogli arrivano DOPO il mount (li
+// scarica la testata), quindi si guarda il portafoglio e non lo si legge una
+// volta sola: altrimenti il Select resterebbe vuoto.
+watch(
+  () => walletStore.walletId,
+  (id) => id && dashboard.walletId !== id && dashboard.carica(id),
+  { immediate: true },
+);
+
 onMounted(async () => {
   try {
-    // Le categorie non dipendono dal mese, ma stanno nello store della
-    // dashboard: se si arriva qui a freddo (link diretto) vanno caricate.
-    if (walletStore.walletId && dashboard.walletId !== walletStore.walletId) {
-      await dashboard.carica(walletStore.walletId);
-    }
     if (props.id) {
       const t = await trovaTransazione(props.id);
       Object.assign(form, {
@@ -144,6 +149,7 @@ async function salva() {
           :options="categorie"
           optionLabel="label"
           optionValue="value"
+          :loading="dashboard.loading"
           :placeholder="categorie.length ? 'Seleziona categoria' : 'Nessuna categoria: creane una in Impostazioni'"
           fluid
         />

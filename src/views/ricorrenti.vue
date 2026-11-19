@@ -68,6 +68,7 @@ function elimina(t) {
 <template>
   <div class="flex flex-col gap-4 px-4 pt-6">
     <div>
+      <Indietro />
       <p class="text-xs font-semibold uppercase tracking-[0.2em] text-testo2">Ogni mese</p>
       <h1 class="text-3xl font-bold text-testo">Ricorrenti</h1>
     </div>

@@ -68,6 +68,7 @@ async function esporta() {
 <template>
   <div class="flex max-w-lg flex-col gap-3 px-4 pt-6">
     <div class="mb-3">
+      <Indietro />
       <p class="text-xs font-semibold uppercase tracking-[0.2em] text-testo2">Dati</p>
       <h1 class="text-3xl font-bold text-testo">Esporta</h1>
       <p class="mt-2 text-sm text-testo2">
@@ -117,6 +118,7 @@ async function esporta() {
       :label="inCorso ? 'Preparo il file…' : 'Esporta CSV'"
       icon="pi pi-download"
       :loading="inCorso"
+      :disabled="!walletStore.wallets.length"
       class="mt-3"
       @click="esporta"
     />

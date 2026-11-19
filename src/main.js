@@ -11,9 +11,9 @@ import Ripple from "primevue/ripple";
 import App from "./App.vue";
 import { router } from "./router/index.js";
 import { budgetTheme } from "./theme.js";
-import { api, impostaSessioneScaduta } from "./services/api.js";
+import { impostaSessioneScaduta } from "./services/api.js";
 import { useAuthStore } from "./stores/auth.js";
-import PageTitle from "./components/title.vue";
+import Indietro from "./components/Indietro.vue";
 
 // Componenti PrimeVue registrati globalmente (le viste non li importano)
 import Button from "primevue/button";
@@ -65,16 +65,13 @@ app.use(PrimeVue, {
 app.use(ToastService);
 app.use(ConfirmationService);
 app.directive("ripple", Ripple);
-app.component("PageTitle", PageTitle);
+app.component("Indietro", Indietro);
 
 Object.entries({
   Button, Form, IconField, InputIcon, InputText, InputNumber, Toast, ConfirmDialog,
   Toolbar, Select, DataTable, Column, Skeleton, DatePicker, Chart, ToggleSwitch,
   Card, ProgressBar, Dialog,
 }).forEach(([nome, componente]) => app.component(nome, componente));
-
-// Le viste ancora da riscrivere (risparmio, impostazioni) usano this.$http.
-app.config.globalProperties.$http = api;
 
 // 401 dal server: chiude la sessione e porta al login.
 impostaSessioneScaduta(() => {

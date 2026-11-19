@@ -9,7 +9,11 @@ import Consigli from "../views/consigli.vue";
 import Anno from "../views/anno.vue";
 import Export from "../views/export.vue";
 import Analisi from "../views/analisi.vue";
-import Impostazioni from "../views/setting.vue";
+import Impostazioni from "../views/impostazioni/indice.vue";
+import ImpostazioniProfilo from "../views/impostazioni/profilo.vue";
+import ImpostazioniPortafogli from "../views/impostazioni/portafogli.vue";
+import ImpostazioniCategorie from "../views/impostazioni/categorie.vue";
+import ImpostazioniAi from "../views/impostazioni/ai.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -17,14 +21,19 @@ export const router = createRouter({
     { path: "/login", name: "Login", component: Login, meta: { pubblica: true } },
     { path: "/", name: "home", component: Home },
     // id presente = modifica, assente = nuova
-    { path: "/transazioni/:id?", name: "transazioni", component: Transazioni, props: true, meta: { title: "Transazione" } },
-    { path: "/risparmio", name: "risparmio", component: Risparmio, meta: { title: "Risparmio" } },
-    { path: "/ricorrenti", name: "ricorrenti", component: Ricorrenti },
+    { path: "/transazioni/:id?", name: "transazioni", component: Transazioni, props: true },
+    { path: "/risparmio", name: "risparmio", component: Risparmio },
     { path: "/consigli", name: "consigli", component: Consigli },
     { path: "/anno", name: "anno", component: Anno },
-    { path: "/export", name: "export", component: Export },
     { path: "/analisi", name: "analisi", component: Analisi },
-    { path: "/impostazioni", name: "impostazioni", component: Impostazioni, meta: { title: "Impostazioni" } },
+    // Sottopagine di Impostazioni (ricorrenti ed export ne fanno parte: hanno il link "indietro")
+    { path: "/impostazioni", name: "impostazioni", component: Impostazioni },
+    { path: "/impostazioni/profilo", name: "profilo", component: ImpostazioniProfilo },
+    { path: "/impostazioni/portafogli", name: "portafogli", component: ImpostazioniPortafogli },
+    { path: "/impostazioni/categorie", name: "categorie", component: ImpostazioniCategorie },
+    { path: "/impostazioni/ai", name: "ai", component: ImpostazioniAi },
+    { path: "/ricorrenti", name: "ricorrenti", component: Ricorrenti },
+    { path: "/export", name: "export", component: Export },
     { path: "/:catchAll(.*)", redirect: "/" },
   ],
 });
