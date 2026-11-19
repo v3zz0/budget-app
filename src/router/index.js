@@ -5,6 +5,9 @@ import Home from "../views/home.vue";
 import Transazioni from "../views/transazioni.vue";
 import Risparmio from "../views/risparmio.vue";
 import Ricorrenti from "../views/ricorrenti.vue";
+import Consigli from "../views/consigli.vue";
+import Anno from "../views/anno.vue";
+import Export from "../views/export.vue";
 import Impostazioni from "../views/setting.vue";
 
 export const router = createRouter({
@@ -16,6 +19,9 @@ export const router = createRouter({
     { path: "/transazioni/:id?", name: "transazioni", component: Transazioni, props: true, meta: { title: "Transazione" } },
     { path: "/risparmio", name: "risparmio", component: Risparmio, meta: { title: "Risparmio" } },
     { path: "/ricorrenti", name: "ricorrenti", component: Ricorrenti },
+    { path: "/consigli", name: "consigli", component: Consigli },
+    { path: "/anno", name: "anno", component: Anno },
+    { path: "/export", name: "export", component: Export },
     { path: "/impostazioni", name: "impostazioni", component: Impostazioni, meta: { title: "Impostazioni" } },
     { path: "/:catchAll(.*)", redirect: "/" },
   ],

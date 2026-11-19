@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { api } from "@/services/api.js";
 import { useWalletStore } from "./wallet.js";
 import { useDashboardStore } from "./dashboard.js";
+import { useConsigliStore } from "./consigli.js";
 
 const leggiUtente = () => {
   try {
@@ -49,6 +50,7 @@ export const useAuthStore = defineStore("auth", {
       // I dati in memoria sono di chi se ne va: non devono restare a chi entra.
       useWalletStore().reset();
       useDashboardStore().reset();
+      useConsigliStore().reset();
     },
   },
 });

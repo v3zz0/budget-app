@@ -52,14 +52,21 @@ export function erroreLeggibile(e) {
  * (il ciclo esce subito); oltre 100 record il totale non resta più
  * silenziosamente troncato. 100 = maxLimit di budget-api/config/api.js.
  */
-export async function elencaTutte(url, params = {}) {
-  const tutte = [];
+export async function elencaConTotale(url, params = {}) {
+  const righe = [];
+  let totale = 0;
   for (let page = 1; page <= 200; page++) {
     const { data } = await api.get(url, {
       params: { ...params, pagination: { page, pageSize: 100 } },
     });
-    tutte.push(...data.data);
+    righe.push(...data.data);
+    totale = data.meta?.pagination?.total ?? totale;
     if (page >= (data.meta?.pagination?.pageCount ?? 1) || !data.data.length) break;
   }
-  return tutte;
+  // `totale` è quello dichiarato dal server: chi mostra somme (export, anno)
+  // confronta `righe.length` con `totale` e deve dirlo se non coincidono,
+  // perché un totale parziale che si spaccia per completo non dà segnali.
+  return { righe, totale };
 }
+
+export const elencaTutte = async (url, params) => (await elencaConTotale(url, params)).righe;

@@ -1,8 +1,9 @@
 <script setup>
-import { computed, reactive, watch } from "vue";
+import { computed, onMounted, reactive, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
+import { useConsigliStore } from "@/stores/consigli.js";
 import { useDashboardStore, somma } from "@/stores/dashboard.js";
 import { useWalletStore } from "@/stores/wallet.js";
 import { eliminaTransazione } from "@/services/transazioni.js";
@@ -14,8 +15,12 @@ const confirm = useConfirm();
 const toast = useToast();
 const dashboard = useDashboardStore();
 const walletStore = useWalletStore();
+const consigli = useConsigliStore();
 
 const espanse = reactive(new Set());
+
+// I consigli li genera il cron a fine mese: qui si leggono e basta.
+onMounted(() => consigli.carica());
 
 // Carica al primo ingresso e a ogni cambio di portafoglio. Il mese lo
 // ricarica dal server a ogni cambio (cambiaMese), non si filtra sul client.
@@ -59,25 +64,6 @@ function elimina(t) {
     },
   });
 }
-
-// CSV con i campi sempre tra virgolette e le virgolette raddoppiate.
-// ponytail: vive qui perché c'era già in home; con l'export per ambito
-// (tutto/anno/mese) si sposta in Impostazioni.
-function esportaCsv() {
-  const q = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
-  const righeCsv = [["Categoria", "Budget", "Spesi", "Rimanenti", "Descrizione", "Importo", "Data"]];
-  for (const c of righe.value) {
-    const base = [c.Nome, c.budget, c.spesi, c.rimanente];
-    if (!c.transazionis.length) righeCsv.push([...base, "", "", ""]);
-    for (const t of c.transazionis) righeCsv.push([...base, t.Descrizione, t.Importo, dataIt(t.Data)]);
-  }
-  const blob = new Blob([righeCsv.map((r) => r.map(q).join(",")).join("\n")], { type: "text/csv;charset=utf-8;" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `budget_${dashboard.mese.anno}-${String(dashboard.mese.mese).padStart(2, "0")}.csv`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
 </script>
 
 <template>
@@ -96,7 +82,25 @@ function esportaCsv() {
           <Button icon="pi pi-chevron-right" text rounded severity="secondary" aria-label="Mese successivo" @click="dashboard.cambiaMese(1)" />
         </div>
       </div>
-      <Button icon="pi pi-download" label="CSV" severity="secondary" size="small" :disabled="!righe.length" @click="esportaCsv" />
+      <div class="flex items-center">
+        <!-- Campanella dei consigli: il pallino compare solo se c'è qualcosa di nuovo -->
+        <span class="relative">
+          <Button
+            :icon="consigli.nonLetti ? 'pi pi-bell text-accent' : 'pi pi-bell'"
+            text
+            rounded
+            severity="secondary"
+            aria-label="Consigli sul budget"
+            @click="router.push('/consigli')"
+          />
+          <span
+            v-if="consigli.nonLetti"
+            class="pointer-events-none absolute -right-0.5 top-0 grid min-w-4 place-items-center rounded-full bg-errore px-1 text-[10px] font-bold text-fondo"
+          >{{ consigli.nonLetti }}</span>
+        </span>
+        <Button icon="pi pi-chart-bar" text rounded severity="secondary" aria-label="Riepilogo anno" @click="router.push('/anno')" />
+        <Button icon="pi pi-download" text rounded severity="secondary" aria-label="Esporta CSV" @click="router.push('/export')" />
+      </div>
     </div>
 
     <p v-if="!walletStore.selectedWallet" class="py-10 text-center text-testo2">
