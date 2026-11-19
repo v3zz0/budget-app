@@ -1,457 +1,197 @@
+<script setup>
+import { computed, reactive, watch } from "vue";
+import { useRouter } from "vue-router";
+import { useConfirm } from "primevue/useconfirm";
+import { useToast } from "primevue/usetoast";
+import { useDashboardStore, somma } from "@/stores/dashboard.js";
+import { useWalletStore } from "@/stores/wallet.js";
+import { eliminaTransazione } from "@/services/transazioni.js";
+import { erroreLeggibile } from "@/services/api.js";
+import { coloreImporto, dataIt, euro, nomeMese } from "@/utils/budget.js";
+
+const router = useRouter();
+const confirm = useConfirm();
+const toast = useToast();
+const dashboard = useDashboardStore();
+const walletStore = useWalletStore();
+
+const espanse = reactive(new Set());
+
+// Carica al primo ingresso e a ogni cambio di portafoglio. Il mese lo
+// ricarica dal server a ogni cambio (cambiaMese), non si filtra sul client.
+watch(() => walletStore.walletId, (id) => id && dashboard.carica(id), { immediate: true });
+
+const righe = computed(() =>
+  dashboard.categorie.map((c) => {
+    const budget = c.Budget_categoria || 0;
+    const spesi = somma(c.transazionis);
+    const quota = budget > 0 ? spesi / budget : 0;
+    return {
+      ...c,
+      budget,
+      spesi,
+      rimanente: budget - spesi,
+      riempimento: Math.min(quota, 1) * 100,
+      // quanto si è sforato, in frazione di budget: la barra da sola è
+      // clampata, e al 110% e al 300% sarebbe identica
+      oltre: Math.min(Math.max(quota - 1, 0), 1),
+    };
+  }),
+);
+
+const toggle = (id) => (espanse.has(id) ? espanse.delete(id) : espanse.add(id));
+
+function elimina(t) {
+  confirm.require({
+    header: "Elimina transazione",
+    message: `Eliminare "${t.Descrizione || "senza descrizione"}" (${euro(t.Importo, 2)})?`,
+    acceptLabel: "Elimina",
+    rejectLabel: "Annulla",
+    acceptProps: { severity: "danger" },
+    rejectProps: { severity: "secondary", text: true },
+    accept: async () => {
+      try {
+        await eliminaTransazione(t.documentId);
+        await dashboard.carica();
+      } catch (e) {
+        toast.add({ severity: "error", summary: "Errore", detail: erroreLeggibile(e), life: 4000 });
+      }
+    },
+  });
+}
+
+// CSV con i campi sempre tra virgolette e le virgolette raddoppiate.
+// ponytail: vive qui perché c'era già in home; con l'export per ambito
+// (tutto/anno/mese) si sposta in Impostazioni.
+function esportaCsv() {
+  const q = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
+  const righeCsv = [["Categoria", "Budget", "Spesi", "Rimanenti", "Descrizione", "Importo", "Data"]];
+  for (const c of righe.value) {
+    const base = [c.Nome, c.budget, c.spesi, c.rimanente];
+    if (!c.transazionis.length) righeCsv.push([...base, "", "", ""]);
+    for (const t of c.transazionis) righeCsv.push([...base, t.Descrizione, t.Importo, dataIt(t.Data)]);
+  }
+  const blob = new Blob([righeCsv.map((r) => r.map(q).join(",")).join("\n")], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `budget_${dashboard.mese.anno}-${String(dashboard.mese.mese).padStart(2, "0")}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+</script>
+
 <template>
-  <!--titolo-->
-  <div class="flex justify-between items-center px-5 md:px-12 lg:px-20 py-10">
-    <div class="hidden md:flex">
-      <PageTitle />
-    </div>
-    <div>
-      <Button
-        icon="pi pi-download"
-        label="Import csv"
-        @click="importCSV($event)"
-        severity="secondary"
-        class="m-5"
-      />
-      <Button
-        icon="pi pi-external-link"
-        label="Export csv"
-        @click="exportCSV($event)"
-        severity="secondary"
-      />
-    </div>
-  </div>
-  <!--DATA-->
-  <div
-    class="bg-surface-50 dark:bg-surface-950 px-6 mb-5 md:px-12 lg:px-20 pt-6"
-  >
-    <div class="flex items-center justify-center gap-6">
-      <Button
-        icon="pi pi-chevron-left"
-        text
-        rounded
-        severity="secondary"
-        @click="mesePrecedente"
-      />
-      <div class="flex flex-col items-center min-w-48">
-        <span
-          class="text-xl font-bold capitalize text-surface-900 dark:text-surface-0"
-        >
-          {{ labelMese }}
-        </span>
-      </div>
-      <Button
-        icon="pi pi-chevron-right"
-        text
-        rounded
-        severity="secondary"
-        @click="meseSuccessivo"
-      />
-    </div>
-  </div>
-  <!--quadrati dashboard-->
-  <div
-    class="bg-surface-50 dark:bg-surface-950 pt-1 px-6 py-8 md:px-12 lg:px-20"
-  >
-    <div class="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
-      <div
-        class="bg-surface-0 dark:bg-surface-900 shadow-sm p-5 rounded-2xl"
-        style="background: #f6f6f6"
-      >
-        <div class="flex justify-between gap-3">
-          <div class="flex flex-col gap-2">
-            <div
-              class="text-surface-900 dark:text-surface-0 text-xl leading-tight!"
-            >
-              Budget
-            </div>
-          </div>
+  <div class="flex flex-col gap-4 px-4 pt-6">
+    <!-- Testata: eyebrow + navigatore mese -->
+    <div class="flex items-center justify-between gap-2">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-testo2">
+          {{ walletStore.selectedWallet?.Nome || "Portafoglio" }}
+        </p>
+        <div class="mt-1 flex items-center gap-1">
+          <Button icon="pi pi-chevron-left" text rounded severity="secondary" aria-label="Mese precedente" @click="dashboard.cambiaMese(-1)" />
+          <h1 class="min-w-44 text-center text-2xl font-bold text-testo">
+            {{ nomeMese(dashboard.mese.mese) }} {{ dashboard.mese.anno }}
+          </h1>
+          <Button icon="pi pi-chevron-right" text rounded severity="secondary" aria-label="Mese successivo" @click="dashboard.cambiaMese(1)" />
         </div>
-        <div class="mt-4">
-          <span
-            class="text-surface-900 dark:text-surface-0 font-semibold text-2xl! leading-tight!"
-            >{{ totaleBudget }} €</span
-          >
+      </div>
+      <Button icon="pi pi-download" label="CSV" severity="secondary" size="small" :disabled="!righe.length" @click="esportaCsv" />
+    </div>
+
+    <p v-if="!walletStore.selectedWallet" class="py-10 text-center text-testo2">
+      Nessun portafoglio. Creane uno in Impostazioni.
+    </p>
+
+    <!-- Errore -->
+    <div v-else-if="dashboard.errore" class="rounded-xl border border-errore/40 bg-errore/15 p-4 text-errore-testo">
+      {{ dashboard.errore }}
+    </div>
+
+    <!-- Caricamento -->
+    <template v-else-if="dashboard.loading && !righe.length">
+      <div class="grid grid-cols-3 gap-2"><Skeleton v-for="i in 3" :key="i" height="4.5rem" borderRadius="12px" /></div>
+      <Skeleton v-for="i in 4" :key="i" height="5rem" borderRadius="12px" />
+    </template>
+
+    <template v-else>
+      <!-- Tre card: Budget / Spesi / Rimanenti. Il rimanente porta il segno,
+           non solo il colore. -->
+      <div class="grid grid-cols-3 gap-2" :class="{ 'opacity-60': dashboard.loading }">
+        <div class="rounded-xl border border-bordo bg-card px-2 py-3 text-center">
+          <p class="text-[11px] text-testo2">Budget</p>
+          <p class="mt-1 text-base font-bold text-testo2">{{ euro(dashboard.totaleBudget) }}</p>
+        </div>
+        <div class="rounded-xl border border-bordo bg-card px-2 py-3 text-center">
+          <p class="text-[11px] text-testo2">Spesi</p>
+          <p class="mt-1 text-base font-bold text-testo">{{ euro(dashboard.totaleSpesi) }}</p>
+        </div>
+        <div class="rounded-xl border border-bordo bg-card px-2 py-3 text-center">
+          <p class="text-[11px] text-testo2">Rimanenti</p>
+          <p class="mt-1 text-base font-bold" :class="coloreImporto(dashboard.totaleRimanente)">
+            {{ euro(dashboard.totaleRimanente) }}
+          </p>
         </div>
       </div>
 
-      <div
-        class="bg-surface-0 dark:bg-surface-900 shadow-sm p-5 rounded-2xl"
-        style="background: #f6f6f6"
-      >
-        <div class="flex justify-between gap-3">
-          <div class="flex flex-col gap-2">
-            <div
-              class="text-surface-900 dark:text-surface-0 text-xl leading-tight!"
-            >
-              Spesi
-            </div>
-          </div>
-        </div>
-        <div class="mt-4">
-          <span
-            class="text-surface-900 dark:text-surface-0 font-semibold text-2xl! leading-tight!"
-            >{{ totaleSpesi }} €</span
-          >
+      <!-- Proiezione: solo se il ritmo porta a sforare (i consigli di fine
+           mese arrivano a mese già chiuso) -->
+      <div v-if="dashboard.proiezionePreoccupante" class="flex gap-3 rounded-xl border border-avviso/40 bg-avviso/10 p-3">
+        <i class="pi pi-chart-line mt-0.5 text-avviso" />
+        <div>
+          <p class="text-sm font-semibold text-testo">Di questo passo sfori</p>
+          <p class="text-xs text-testo2">
+            Chiuderesti il mese a {{ euro(dashboard.proiezione) }}, cioè
+            {{ euro(dashboard.proiezione - dashboard.totaleBudget) }} sopra il budget.
+          </p>
         </div>
       </div>
-      <div
-        class="bg-surface-0 dark:bg-surface-900 shadow-sm p-5 rounded-2xl"
-        style="background: #f6f6f6"
-      >
-        <div class="flex justify-between gap-3">
-          <div class="flex flex-col gap-2">
-            <div
-              class="text-surface-900 dark:text-surface-0 text-xl leading-tight!"
-            >
-              Rimanenti
-            </div>
-          </div>
-        </div>
-        <div class="mt-4">
-          <span
-            :class="[
-              'font-semibold text-2xl! leading-tight!',
-              totaleRimanenti < 0
-                ? 'text-red-500'
-                : 'text-surface-900 dark:text-surface-0',
-            ]"
-            >{{ totaleRimanenti }} €</span
-          >
-        </div>
-      </div>
-    </div>
-  </div>
-  <!-- Mostra le categorie del wallet selezionato -->
-  <div class="card">
-    <!-- Se sta caricando → mostra skeleton -->
-    <DataTable v-if="loading" :value="new Array(5)">
-      <Column style="width: 5%">
-        <template #body><Skeleton width="2rem" /></template>
-      </Column>
-      <Column header="Nome">
-        <template #body><Skeleton /></template>
-      </Column>
-      <Column header="Budget">
-        <template #body><Skeleton width="4rem" /></template>
-      </Column>
-      <Column header="Spesi">
-        <template #body><Skeleton width="4rem" /></template>
-      </Column>
-      <Column header="Rimanente">
-        <template #body><Skeleton width="4rem" /></template>
-      </Column>
-    </DataTable>
-    <DataTable
-      v-else
-      v-model:expandedRows="expandedRows"
-      :value="categoriesFiltrate"
-      dataKey="documentId"
-    >
-      <template #header> </template>
-      <!-- Colonna con freccia espandi/chiudi -->
-      <Column expander style="width: 5%" />
-      <Column field="Nome" header="Nome" style="width: 20%"></Column>
-      <Column field="Budget_categoria" header="Budget" style="width: 20%">
-        <template #body="slotProps">
-          {{ slotProps.data.Budget_categoria || 0 }} €
-        </template>
-      </Column>
-      <Column field="Spesi" header="Spesi" style="width: 20%">
-        <template #body="slotProps">
-          {{
-            slotProps.data.transazionis?.reduce(
-              (s, tx) => s + (tx.Importo || 0),
-              0,
-            ) || 0
-          }}
-          €
-        </template></Column
-      >
-      <Column field="Rimanenti" header="Rimanenti" style="width: 20%">
-        <template #body="slotProps">
-          <span
-            :class="
-              slotProps.data.Budget_categoria -
-                (slotProps.data.transazionis?.reduce(
-                  (s, tx) => s + (tx.Importo || 0),
-                  0,
-                ) || 0) <
-              0
-                ? 'text-red-500 font-bold'
-                : ''
-            "
-          >
-            {{
-              slotProps.data.Budget_categoria -
-              (slotProps.data.transazionis?.reduce(
-                (s, tx) => s + (tx.Importo || 0),
-                0,
-              ) || 0)
-            }}
-            €
-          </span>
-        </template>
-      </Column>
 
-      <!-- Contenuto espanso: transazioni della categoria -->
-      <template #expansion="slotProps">
-        <div class="p-7" v-if="slotProps.data.transazionis.length > 0">
-          <DataTable
-            :value="slotProps.data.transazionis"
-            v-model:editingRows="editingRowsTransazioni"
-            editMode="row"
-            dataKey="documentId"
-            @row-edit-save="onTransazioneEditSave"
-          >
-            <Column field="Descrizione" header="Descrizione">
-              <template #editor="{ data, field }">
-                <InputText v-model="data[field]" fluid />
-              </template>
-            </Column>
-            <Column field="Importo" header="Importo">
-              <template #body="txProps">{{ txProps.data.Importo }} €</template>
-              <template #editor="{ data, field }">
-                <InputNumber
-                  v-model="data[field]"
-                  mode="currency"
-                  currency="EUR"
-                  locale="it-IT"
-                  fluid
-                />
-              </template>
-            </Column>
-            <Column field="Data" header="Data">
-              <template #body="txProps">
-                {{ new Date(txProps.data.Data).toLocaleDateString("it-IT") }}
-              </template>
-              <template #editor="{ data, field }">
-                <DatePicker
-                  :modelValue="data[field] ? new Date(data[field]) : null"
-                  @update:modelValue="val => data[field] = val"
-                  fluid
-                />
-              </template>
-            </Column>
-            <Column
-              :rowEditor="true"
-              style="width: 8rem"
-              bodyStyle="text-align:center"
-            />
-            <Column>
-              <template #body="{ data }">
-                <Button
-                  icon="pi pi-trash"
-                  severity="danger"
-                  rounded
-                  @click="deleteRow(data)"
-                />
-              </template>
-            </Column>
-          </DataTable>
-        </div>
-        <div
-          v-else
-          class="text-surface-700 dark:text-surface-100 text-center flex flex-col items-center gap-4"
+      <p v-if="!righe.length" class="py-10 text-center text-testo2">
+        Nessuna categoria. Creane una in Impostazioni per iniziare.
+      </p>
+
+      <!-- Categorie espandibili -->
+      <div v-for="c in righe" :key="c.documentId" class="rounded-xl border border-bordo bg-card">
+        <button
+          type="button"
+          class="w-full rounded-xl p-4 text-left"
+          :aria-expanded="espanse.has(c.documentId)"
+          @click="toggle(c.documentId)"
         >
-          <h5 class="text-primary font-bold text-lg leading-tight">
-            NESSUNA TRANSAZIONE DA MOSTRARE
-          </h5>
+          <div class="flex items-center gap-2">
+            <span v-if="c.icona" class="text-lg">{{ c.icona }}</span>
+            <span class="flex-1 font-semibold text-testo">{{ c.Nome }}</span>
+            <span class="text-sm text-testo2">{{ euro(c.spesi) }} / {{ euro(c.budget) }}</span>
+            <span class="text-sm font-semibold" :class="coloreImporto(c.rimanente)">{{ euro(c.rimanente) }}</span>
+            <i class="pi text-testo2" :class="espanse.has(c.documentId) ? 'pi-chevron-up' : 'pi-chevron-down'" />
+          </div>
+          <!-- Due segmenti quando si sfora: budget consumato + quanto oltre -->
+          <div class="mt-3 flex gap-[3px]">
+            <div class="h-1.5 overflow-hidden rounded bg-campo" style="flex: 100 1 0">
+              <div class="h-full" :class="c.rimanente < 0 ? 'bg-errore' : 'bg-positivo'" :style="{ width: c.riempimento + '%' }" />
+            </div>
+            <div v-if="c.oltre > 0" class="h-1.5 rounded bg-errore" :style="{ flex: `${Math.max(1, Math.round(c.oltre * 100))} 1 0` }" />
+          </div>
+        </button>
+
+        <div v-if="espanse.has(c.documentId)" class="border-t border-bordo">
+          <p v-if="!c.transazionis.length" class="p-4 text-sm text-testo2">Nessuna transazione questo mese</p>
+          <div
+            v-for="t in c.transazionis"
+            :key="t.documentId"
+            class="flex items-center gap-3 px-4 py-2.5 hover:bg-campo/50"
+          >
+            <button type="button" class="flex-1 text-left" @click="router.push(`/transazioni/${t.documentId}`)">
+              <p class="text-sm text-testo">{{ t.Descrizione || "—" }}</p>
+              <p class="text-[11px] text-testo2">{{ dataIt(t.Data) }}</p>
+            </button>
+            <i v-if="t.TransazioneRicorrente" class="pi pi-replay text-xs text-testo2" title="Ricorrente" />
+            <span class="text-sm font-semibold text-testo">{{ euro(t.Importo, 2) }}</span>
+            <Button icon="pi pi-trash" severity="danger" text rounded size="small" aria-label="Elimina" @click="elimina(t)" />
+          </div>
         </div>
-      </template>
-    </DataTable>
+      </div>
+    </template>
   </div>
 </template>
-<script>
-import { useWalletStore } from "@/stores/wallet.js";
-
-export default {
-  name: "Home",
-
-  data() {
-    return {
-      categories: [],
-      expandedRows: {},
-      editingRowsTransazioni: [],
-      loading: true,
-      budget: null,
-      meseCorrente: new Date().getMonth(),
-      annoCorrente: new Date().getFullYear(),
-    };
-  },
-
-  computed: {
-    walletStore() {
-      return useWalletStore();
-    },
-    selectedWallet() {
-      return this.walletStore.selectedWallet;
-    },
-    totaleBudget() {
-      return this.selectedWallet?.Budget || 0;
-    },
-    totaleSpesi() {
-      return this.categoriesFiltrate.reduce((sum, cat) => {
-        const speseCat =
-          cat.transazionis?.reduce((s, tx) => s + (tx.Importo || 0), 0) || 0;
-        return sum + speseCat;
-      }, 0);
-    },
-    totaleRimanenti() {
-      return this.totaleBudget - this.totaleSpesi;
-    },
-    categoriesFiltrate() {
-      return this.categories.map((cat) => ({
-        ...cat,
-        transazionis:
-          cat.transazionis?.filter((tx) => {
-            const data = new Date(tx.Data);
-            return (
-              data.getMonth() === this.meseCorrente &&
-              data.getFullYear() === this.annoCorrente
-            );
-          }) || [],
-      }));
-    },
-    labelMese() {
-      const data = new Date(this.annoCorrente, this.meseCorrente);
-      return data.toLocaleDateString("it-IT", {
-        month: "long",
-        year: "numeric",
-      });
-    },
-  },
-
-  watch: {
-    selectedWallet(nuovoWallet, vecchioWallet) {
-      if (nuovoWallet) {
-        this.loadCategories(nuovoWallet.documentId);
-      }
-    },
-  },
-
-  // Quando il componente viene montato, carica le categorie
-  async mounted() {
-    if (this.selectedWallet) {
-      await this.loadCategories(this.selectedWallet.documentId);
-    }
-  },
-
-  methods: {
-    async loadCategories(walletId) {
-      this.loading = true;
-      try {
-        //await new Promise((resolve) => setTimeout(resolve, 4000));
-        const response = await this.$http.get("/api/categories", {
-          params: {
-            filters: {
-              wallet: {
-                documentId: { $eq: walletId },
-              },
-            },
-            populate: "*",
-          },
-        });
-        this.categories = response.data.data;
-      } catch (err) {
-        console.error("Errore caricamento categorie:", err);
-      } finally {
-        this.loading = false;
-      }
-    },
-    mesePrecedente() {
-      if (this.meseCorrente === 0) {
-        this.meseCorrente = 11;
-        this.annoCorrente--;
-      } else {
-        this.meseCorrente--;
-      }
-    },
-    meseSuccessivo() {
-      if (this.meseCorrente === 11) {
-        this.meseCorrente = 0;
-        this.annoCorrente++;
-      } else {
-        this.meseCorrente++;
-      }
-    },
-    exportCSV() {
-      const righe = [];
-      // Header
-      righe.push(
-        "Categoria,Budget,Spesi,Rimanenti,Descrizione Transazione,Importo,Data",
-      );
-
-      this.categoriesFiltrate.forEach((cat) => {
-        const spesi =
-          cat.transazionis?.reduce((s, tx) => s + (tx.Importo || 0), 0) || 0;
-        const rimanenti = (cat.Budget_categoria || 0) - spesi;
-
-        if (cat.transazionis?.length > 0) {
-          cat.transazionis.forEach((tx) => {
-            const data = new Date(tx.Data).toLocaleDateString("it-IT");
-            righe.push(
-              `"${cat.Nome}","${cat.Budget_categoria || 0}","${spesi}","${rimanenti}","${tx.Descrizione || ""}","${tx.Importo || 0}","${data}"`,
-            );
-          });
-        } else {
-          righe.push(
-            `"${cat.Nome}","${cat.Budget_categoria || 0}","${spesi}","${rimanenti}","","",""`,
-          );
-        }
-      });
-
-      const csv = righe.join("\n");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `budget_${this.labelMese}.csv`;
-      link.click();
-      URL.revokeObjectURL(link.href);
-    },
-    async onTransazioneEditSave(event) {
-      const { newData } = event;
-      try {
-        await this.$http.put(`/api/transazionis/${newData.documentId}`, {
-          data: {
-            Descrizione: newData.Descrizione,
-            Importo: newData.Importo,
-            Data: newData.Data,
-          },
-        });
-        // Aggiorna in locale
-        const cat = this.categories.find((c) =>
-          c.transazionis?.some((tx) => tx.documentId === newData.documentId),
-        );
-        if (cat) {
-          const idx = cat.transazionis.findIndex(
-            (tx) => tx.documentId === newData.documentId,
-          );
-          if (idx !== -1) cat.transazionis[idx] = { ...newData };
-        }
-      } catch (err) {
-        console.error("Errore salvataggio transazione", err);
-      }
-    },
-
-    async deleteRow(data) {
-      try {
-        //await new Promise((resolve) => setTimeout(resolve, 4000));
-
-        const response = await this.$http.delete(
-          `/api/transazionis/${data.documentId}`,
-        );
-        const cat = this.categories.find((c) =>
-          c.transazionis?.some((tx) => tx.documentId === data.documentId),
-        );
-        if (cat) {
-          cat.transazionis = cat.transazionis.filter(
-            (tx) => tx.documentId !== data.documentId,
-          );
-        }
-      } catch (err) {
-        console.error("Errore eliminazione transazione", err);
-      }
-    },
-  },
-};
-</script>

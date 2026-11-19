@@ -1,1 +1,56 @@
 @import "tailwindcss";
+
+/* dark-only: `dark:` vale sempre (html ha class="app-dark", vedi index.html) */
+@custom-variant dark (&:where(.app-dark, .app-dark *));
+
+/*
+ * Palette dell'app. Dark mode only. I colori stanno SOLO qui: PrimeVue li
+ * legge da src/theme.js, le viste usano le classi (bg-card, text-testo2...).
+ * Mai hex nelle viste: se manca un colore, si aggiunge un token.
+ *
+ * Contrasti WCAG misurati su `card`; soglia AA sotto i 18px = 4.5:1.
+ * PRIMA di cambiare un valore, ricalcolare: diversi stanno appena sopra.
+ */
+@theme {
+  /* scala superfici: 0 = testo, 950 = sfondo (la legge PrimeVue) */
+  --color-surface-0: #e8eff7;
+  --color-surface-50: #dbe5f0;
+  --color-surface-100: #c3d1e0;
+  --color-surface-200: #aab9cc;
+  --color-surface-300: #92a5ba;
+  --color-surface-400: #7a90a8;
+  --color-surface-500: #5e7490;
+  --color-surface-600: #44586f;
+  --color-surface-700: #2f4157;
+  --color-surface-800: #1e2d40;
+  --color-surface-900: #1a2535;
+  --color-surface-950: #0f1923;
+
+  --color-fondo: var(--color-surface-950);
+  --color-card: var(--color-surface-900);
+  --color-campo: var(--color-surface-800);
+  --color-testo: var(--color-surface-0); /* 13.32:1 */
+  --color-testo2: var(--color-surface-400); /* 4.69:1 */
+
+  /* Brand e azioni. 4.20:1: NON per i valori monetari. */
+  --color-accent: #3b82f6;
+  /* rimanente sopra zero, risparmi, progressi in regola. 6.09:1 */
+  --color-positivo: #10b981;
+  /* sfondi, bordi, icone. 4.21:1: come TESTO usare errore-testo */
+  --color-errore: #f43f5e;
+  --color-errore-testo: #fb7185; /* 5.74:1 */
+  /* proiezione di sfondamento, dati parziali. 9.25:1 */
+  --color-avviso: #eab308;
+  /* bordo card. 1.72:1 (vedi Flutter AppColors.border per il perché) */
+  --color-bordo: rgb(255 255 255 / 0.14);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--color-fondo);
+  color: var(--color-testo);
+}
