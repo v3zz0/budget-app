@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, elencaTutte } from "./api.js";
 
 const URL = "/api/transazionis";
 
@@ -20,6 +20,18 @@ const corpo = (t) => ({
 export const creaTransazione = (t) => api.post(URL, corpo(t));
 export const aggiornaTransazione = (id, t) => api.put(`${URL}/${id}`, corpo(t));
 export const eliminaTransazione = (id) => api.delete(`${URL}/${id}`);
+
+// I template ricorrenti, di qualunque mese: vivono nel mese in cui sono stati
+// creati, quindi la lista del mese della dashboard non li contiene.
+export const elencaRicorrenti = (walletId) =>
+  elencaTutte(URL, {
+    filters: {
+      TransazioneRicorrente: { $eq: true },
+      categorie: { wallet: { documentId: { $eq: walletId } } },
+    },
+    populate: { categorie: { fields: ["Nome", "icona"] } },
+    sort: ["Data:desc", "id:desc"],
+  });
 
 export const trovaTransazione = async (id) =>
   (await api.get(`${URL}/${id}`, { params: { populate: { categorie: { fields: ["Nome"] } } } }))

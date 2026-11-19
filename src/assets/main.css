@@ -11,7 +11,9 @@
  * Contrasti WCAG misurati su `card`; soglia AA sotto i 18px = 4.5:1.
  * PRIMA di cambiare un valore, ricalcolare: diversi stanno appena sopra.
  */
-@theme {
+/* static: Tailwind emette di default solo le variabili usate da una classe, ma
+   qui le legge anche PrimeVue (theme.js) e i grafici (utils/tokens.js). */
+@theme static {
   /* scala superfici: 0 = testo, 950 = sfondo (la legge PrimeVue) */
   --color-surface-0: #e8eff7;
   --color-surface-50: #dbe5f0;

@@ -45,6 +45,20 @@ const NOMI_MESE = [
 ];
 export const nomeMese = (mese) => NOMI_MESE[mese - 1];
 
+/** "2026-08" per un (anno, mese 1-12): confronta con `mese.slice(0, 7)`. */
+export const chiaveMese = (anno, mese) => `${anno}-${pad(mese)}`;
+
+/**
+ * Quanto è avanzato in un mese chiuso: budget meno speso, solo se positivo.
+ * È la proposta per il salvadanaio, distinta da `risparmiato` (quanto
+ * l'utente ha deciso di mettere via davvero). null se non c'è niente da dire.
+ */
+export const avanzato = (voce) => {
+  if (!voce || !(voce.budgetAllocato > 0)) return null;
+  const avanzo = voce.budgetAllocato - (voce.speso || 0);
+  return avanzo > 0 ? avanzo : null;
+};
+
 /**
  * `€120` / `−€120`. Il segno è questione di design: un negativo deve leggersi
  * come tale anche in scala di grigi (accent ed errore hanno la stessa

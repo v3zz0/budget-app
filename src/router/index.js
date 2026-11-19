@@ -4,6 +4,7 @@ import Login from "../views/login.vue";
 import Home from "../views/home.vue";
 import Transazioni from "../views/transazioni.vue";
 import Risparmio from "../views/risparmio.vue";
+import Ricorrenti from "../views/ricorrenti.vue";
 import Impostazioni from "../views/setting.vue";
 
 export const router = createRouter({
@@ -14,6 +15,7 @@ export const router = createRouter({
     // id presente = modifica, assente = nuova
     { path: "/transazioni/:id?", name: "transazioni", component: Transazioni, props: true, meta: { title: "Transazione" } },
     { path: "/risparmio", name: "risparmio", component: Risparmio, meta: { title: "Risparmio" } },
+    { path: "/ricorrenti", name: "ricorrenti", component: Ricorrenti },
     { path: "/impostazioni", name: "impostazioni", component: Impostazioni, meta: { title: "Impostazioni" } },
     { path: "/:catchAll(.*)", redirect: "/" },
   ],

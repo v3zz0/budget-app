@@ -13,7 +13,8 @@ const walletStore = useWalletStore();
 
 const voci = [
   { label: "Home", icon: "pi pi-home", to: "/" },
-  { label: "Risparmio", icon: "pi pi-chart-bar", to: "/risparmio" },
+  { label: "Salvadanaio", icon: "pi pi-wallet", to: "/risparmio" },
+  { label: "Ricorrenti", icon: "pi pi-replay", to: "/ricorrenti" },
   { label: "Impostazioni", icon: "pi pi-cog", to: "/impostazioni" },
 ];
 
@@ -77,14 +78,15 @@ function esci() {
 
   <!-- Bottom nav mobile, con il + al centro -->
   <nav
-    class="fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 items-center border-t border-bordo bg-card px-2 pb-2 pt-1 md:hidden"
+    class="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 items-center border-t border-bordo bg-card px-1 pb-2 pt-1 md:hidden"
   >
+    <!-- 4 voci attorno al + (colonna 3): le prime due a sinistra, le altre a destra -->
     <router-link
       v-for="(v, i) in voci"
       :key="v.to"
       :to="v.to"
-      class="flex flex-col items-center gap-1 py-2 text-xs text-testo2"
-      :class="{ 'col-start-4': i === 2 }"
+      class="flex flex-col items-center gap-1 py-2 text-[11px] text-testo2"
+      :style="{ gridColumn: i < 2 ? i + 1 : i + 2, gridRow: 1 }"
       active-class="text-accent!"
     >
       <i :class="v.icon" class="text-lg" />{{ v.label }}
@@ -95,6 +97,7 @@ function esci() {
       size="large"
       aria-label="Nuova transazione"
       class="col-start-3 row-start-1 -mt-8 justify-self-center shadow-lg"
+      style="grid-column: 3; grid-row: 1"
       @click="router.push('/transazioni')"
     />
   </nav>
