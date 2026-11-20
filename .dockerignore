@@ -1,0 +1,9 @@
+# Le immagini si costruiscono da backend/ e frontend/; questo è solo una rete di
+# sicurezza se qualcuno usa la radice come contesto.
+.env
+.env.*
+!.env.example
+*.sql
+node_modules
+.git
+data

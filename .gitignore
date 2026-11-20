@@ -1,0 +1,11 @@
+# Segreti: mai nel repository (che è pubblico)
+.env
+.env.*
+!.env.example
+
+# Dump e dati
+*.sql
+data/
+
+node_modules/
+.DS_Store

@@ -1,0 +1,58 @@
+# budget: frontend (nginx + Vue) e backend (Strapi), costruiti da questo repo.
+# Il database MySQL è ESTERNO: il backend lo raggiunge sulla rete BUDGET_DB_NETWORK.
+#
+#   cp .env.example .env   # e compila (segreti del backend + variabili qui sotto)
+#   docker compose up -d --build --wait
+#
+# Il file .env serve due volte: le variabili ${...} qui sotto le legge compose,
+# e lo stesso file arriva al backend come ambiente (env_file).
+name: budget
+
+services:
+  backend:
+    build: ./backend
+    image: budget-api:${BUDGET_TAG:-local}
+    container_name: budget-api
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    # Solo per il pannello admin (creazione utenti): l'app passa dal frontend.
+    # Da limitare al proprio IP nel reverse proxy, o con BUDGET_BIND_IP sulla LAN.
+    ports: ["${BUDGET_BIND_IP:-0.0.0.0}:${BUDGET_ADMIN_PORT:-1337}:1337"]
+    volumes:
+      - ${BUDGET_UPLOADS_PATH:-./data/uploads}:/app/public/uploads
+    networks:
+      # gw_priority: la porta pubblicata e l'uscita passano dalla rete interna.
+      # Senza, con due reti Docker ne sceglie una in ordine alfabetico: se tocca
+      # alla rete del DB la porta admin può non rispondere (verificato).
+      interna: {gw_priority: 1}
+      db: {}
+    healthcheck:
+      test: [CMD, node, -e, 'fetch("http://127.0.0.1:1337/_health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))']
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    image: budget-app:${BUDGET_TAG:-local}
+    container_name: budget-app
+    ports: ["${BUDGET_BIND_IP:-0.0.0.0}:${BUDGET_FRONTEND_PORT:-8017}:80"]
+    networks: [interna]
+    depends_on:
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+networks:
+  interna: {}
+  # La rete dove sta MySQL (oggi lavoro-net, come col vecchio `docker run --network`).
+  db:
+    external: true
+    name: ${BUDGET_DB_NETWORK:-lavoro-net}

@@ -1,7 +1,11 @@
 import axios from "axios";
 import qs from "qs";
 
-export const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:1337";
+// Vuoto = stesso indirizzo del frontend: le chiamate vanno a /api/... e le
+// inoltra nginx al backend (in sviluppo il proxy di Vite, vedi vite.config.js).
+// Così niente CORS e un'immagine sola per qualunque dominio. VITE_API_URL serve
+// solo se si vuole puntare a un backend su un altro indirizzo.
+export const apiUrl = import.meta.env.VITE_API_URL || "";
 
 export const api = axios.create({
   baseURL: apiUrl,
