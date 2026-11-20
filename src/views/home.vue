@@ -7,6 +7,7 @@ import { useConsigliStore } from "@/stores/consigli.js";
 import { useDashboardStore, somma } from "@/stores/dashboard.js";
 import { useWalletStore } from "@/stores/wallet.js";
 import { eliminaTransazione } from "@/services/transazioni.js";
+import { creaWallet } from "@/services/impostazioni.js";
 import { erroreLeggibile } from "@/services/api.js";
 import { coloreImporto, dataIt, euro, nomeMese } from "@/utils/budget.js";
 
@@ -18,6 +19,22 @@ const walletStore = useWalletStore();
 const consigli = useConsigliStore();
 
 const espanse = reactive(new Set());
+
+// Primo avvio: l'account lo crea l'amministratore e parte senza nulla.
+const primo = reactive({ nome: "", budget: null, salvando: false });
+async function creaPrimo() {
+  primo.salvando = true;
+  try {
+    const creato = await creaWallet(primo.nome.trim(), primo.budget ?? 0);
+    await walletStore.carica();
+    const w = walletStore.wallets.find((x) => x.documentId === creato.documentId);
+    if (w) walletStore.setSelectedWallet(w);
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Portafoglio non creato", detail: erroreLeggibile(e), life: 4000 });
+  } finally {
+    primo.salvando = false;
+  }
+}
 
 // I consigli li genera il cron a fine mese: qui si leggono e basta.
 onMounted(() => consigli.carica());
@@ -68,8 +85,8 @@ function elimina(t) {
 
 <template>
   <div class="flex flex-col gap-4 px-4 pt-6">
-    <!-- Testata: eyebrow + navigatore mese -->
-    <div class="flex items-center justify-between gap-2">
+    <!-- Testata: eyebrow + navigatore mese (non nel primo avvio: senza portafoglio non ha senso) -->
+    <div v-if="walletStore.wallets.length || !walletStore.caricati" class="flex items-center justify-between gap-2">
       <div>
         <p class="text-xs font-semibold uppercase tracking-[0.2em] text-testo2">
           {{ walletStore.selectedWallet?.Nome || "Portafoglio" }}
@@ -102,9 +119,29 @@ function elimina(t) {
       </div>
     </div>
 
-    <p v-if="!walletStore.selectedWallet" class="py-10 text-center text-testo2">
-      Nessun portafoglio. Creane uno in Impostazioni.
-    </p>
+    <!-- Primo avvio -->
+    <section v-if="walletStore.caricati && !walletStore.wallets.length" class="rounded-2xl border border-bordo bg-card p-5">
+      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-accent">Primo avvio</p>
+      <h2 class="mt-1 text-2xl font-bold text-testo">Iniziamo dal primo portafoglio</h2>
+      <p class="mt-2 text-sm text-testo2">
+        Un portafoglio raccoglie le spese e i budget di una parte della tua vita (per esempio la casa, o le spese
+        personali). Ne puoi creare altri in seguito da Impostazioni.
+      </p>
+      <form class="mt-4 flex flex-col gap-4" @submit.prevent="creaPrimo">
+        <div class="flex flex-col gap-2">
+          <label for="primo-nome" class="text-sm text-testo2">Nome</label>
+          <InputText id="primo-nome" v-model="primo.nome" placeholder="Casa" fluid />
+        </div>
+        <div class="flex flex-col gap-2">
+          <label for="primo-budget" class="text-sm text-testo2">Budget mensile</label>
+          <InputNumber v-model="primo.budget" inputId="primo-budget" mode="currency" currency="EUR" locale="it-IT" :min="0" fluid />
+        </div>
+        <Button type="submit" label="Crea il portafoglio" :loading="primo.salvando" :disabled="!primo.nome.trim()" />
+      </form>
+    </section>
+
+    <!-- I portafogli stanno ancora arrivando -->
+    <Skeleton v-else-if="!walletStore.selectedWallet" height="8rem" borderRadius="16px" />
 
     <!-- Errore -->
     <div v-else-if="dashboard.errore" class="rounded-xl border border-errore/40 bg-errore/15 p-4 text-errore-testo">
@@ -150,9 +187,14 @@ function elimina(t) {
         </div>
       </div>
 
-      <p v-if="!righe.length" class="py-10 text-center text-testo2">
-        Nessuna categoria. Creane una in Impostazioni per iniziare.
-      </p>
+      <!-- Portafoglio creato ma ancora senza categorie: è lì che si registrano le spese -->
+      <div v-if="!righe.length" class="flex flex-col items-center gap-3 rounded-2xl border border-bordo bg-card px-6 py-8 text-center">
+        <p class="font-semibold text-testo">Ora le categorie</p>
+        <p class="text-sm text-testo2">
+          Dividi il budget in categorie (spesa, bollette, auto…): le transazioni si registrano dentro una categoria.
+        </p>
+        <Button label="Aggiungi le categorie" icon="pi pi-plus" @click="router.push('/impostazioni/categorie')" />
+      </div>
 
       <!-- Categorie espandibili -->
       <div v-for="c in righe" :key="c.documentId" class="rounded-xl border border-bordo bg-card">

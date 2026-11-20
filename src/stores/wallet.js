@@ -7,6 +7,9 @@ export const useWalletStore = defineStore("wallet", {
   state: () => ({
     wallets: [],
     selectedWallet: null,
+    // true appena è arrivata la lista (anche vuota): distingue "non ho ancora
+    // scaricato" da "non ne hai nessuno", che è il caso del primo avvio.
+    caricati: false,
   }),
 
   getters: {
@@ -30,6 +33,7 @@ export const useWalletStore = defineStore("wallet", {
     // restava il portafoglio di quello precedente.)
     setWallets(wallets) {
       this.wallets = wallets;
+      this.caricati = true;
       const cerca = (id) => wallets.find((w) => w.documentId === id);
       this.selectedWallet =
         cerca(this.walletId) || cerca(localStorage.getItem(CHIAVE)) || wallets[0] || null;
