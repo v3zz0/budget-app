@@ -1,4 +1,6 @@
-FROM node:18-alpine
+# Strapi 5.38 richiede Node >=20 <=24 (vedi "engines" in package.json). Node 18 è
+# fuori supporto da aprile 2025. 22 è l'LTS compreso nell'intervallo.
+FROM node:22-alpine
 
 # Installa le dipendenze necessarie
 RUN apk add --no-cache build-base gcc autoconf automake zlib-dev libpng-dev vips-dev > /dev/null 2>&1
@@ -9,8 +11,9 @@ WORKDIR /app
 # Copia package.json e package-lock.json
 COPY package*.json ./
 
-# Installa le dipendenze
-RUN npm install
+# Installa le dipendenze esattamente come da package-lock.json (npm ci):
+# `npm install` può risolvere versioni diverse da quelle provate.
+RUN npm ci --no-audit --no-fund
 
 # Copia i file del progetto
 COPY . .

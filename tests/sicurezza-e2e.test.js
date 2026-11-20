@@ -10,6 +10,10 @@
 //      transazione unica, e senza toccare gli altri dati
 //   4. un utente non può cancellare i dati di un altro
 //   5. con AI_URL_PRIVATI=blocca l'indirizzo AI privato è rifiutato
+//   6. registrazione, recupero password e conferma email sono chiusi
+//   7. le chiavi AI stanno cifrate nel database (anche le vecchie, in chiaro)
+//   8. eliminare un utente elimina i suoi dati (da Documents API, service e db)
+//   9. la pulizia degli orfani (anteprima, eliminazione, wallet senza utente)
 //
 // Richiede un driver SQLite che NON è una dipendenza del progetto (in
 // produzione si usa MySQL e non serve compilarlo):
@@ -64,7 +68,7 @@ async function main() {
   Object.assign(process.env, {
     DATABASE_CLIENT: 'sqlite', DATABASE_FILENAME: dbFile, PORT: String(porta), HOST: '127.0.0.1',
     NODE_ENV: 'development', STRAPI_TELEMETRY_DISABLED: 'true',
-    APP_KEYS: 'a,b,c,d', API_TOKEN_SALT: 'x', ADMIN_JWT_SECRET: 'x', TRANSFER_TOKEN_SALT: 'x', JWT_SECRET: 'x', ENCRYPTION_KEY: 'x',
+    AI_KEYS_SECRET: 'segreto-di-prova-per-le-chiavi-ai', APP_KEYS: 'a,b,c,d', API_TOKEN_SALT: 'x', ADMIN_JWT_SECRET: 'x', TRANSFER_TOKEN_SALT: 'x', JWT_SECRET: 'x', ENCRYPTION_KEY: 'x',
   });
   delete process.env.AI_URL_PRIVATI;
 
@@ -74,7 +78,7 @@ async function main() {
   try {
     assert.strictEqual(app.db.config.connection.client, 'sqlite', 'ABORT: il database non è sqlite');
     await prova(app, porta);
-    console.log('OK: sicurezza multi-utente (permessi, utenti, cascata, isolamento, SSRF)');
+    console.log('OK: sicurezza multi-utente (permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
   } finally {
     await app.destroy();
     fs.rmSync(appDir, { recursive: true, force: true });
@@ -219,6 +223,133 @@ async function prova(app, porta) {
 
   // Cancellare qualcosa che non esiste non deve rompere nulla.
   assert.strictEqual((await http('DELETE', `/api/wallets/${w1.w.documentId}`, jAda)).status, 404);
+
+  // ── 8. Eliminare un utente elimina i suoi dati ─────────────────────────────
+  const base0 = await totali();
+  const USER = 'plugin::users-permissions.user';
+  const esisteUtente = async (u) => !!(await q(USER).findOne({ where: { id: u.id } }));
+
+  // (a) Documents API: è la strada del pannello admin (Content Manager).
+  const carla = await nuovoUtente('carla');
+  await portafoglio(carla, 'WC');
+  assert.strictEqual((await totali()).w, base0.w + 1);
+  await D(USER).delete({ documentId: carla.documentId });
+  assert.strictEqual(await esisteUtente(carla), false, 'carla deve essere stata eliminata');
+  assert.deepStrictEqual(await totali(), base0, 'i dati di carla devono sparire con lei');
+  assert.deepStrictEqual(await orfani(), nessunOrfano);
+
+  // (b) il service che usa l'API di users-permissions
+  const dave = await nuovoUtente('dave');
+  await portafoglio(dave, 'WD');
+  await utenti.remove({ id: dave.id });
+  assert.strictEqual(await esisteUtente(dave), false);
+  assert.deepStrictEqual(await totali(), base0);
+
+  // (c) deleteMany diretto su più utenti insieme
+  const erin = await nuovoUtente('erin'), frank = await nuovoUtente('frank');
+  await portafoglio(erin, 'WE');
+  await portafoglio(frank, 'WF');
+  await q(USER).deleteMany({ where: { id: { $in: [erin.id, frank.id] } } });
+  assert.deepStrictEqual(await totali(), base0);
+  assert.deepStrictEqual(await orfani(), nessunOrfano);
+  // Gli altri utenti e i loro dati non si toccano.
+  assert.ok(await esisteUtente(ada) && await esisteUtente(bob));
+  assert.strictEqual(await conta(W, { users_permissions_user: { id: ada.id } }), 1);
+
+  // ── 9. Pulizia degli orfani ────────────────────────────────────────────────
+  // Gli orfani si creano come li lasciava il vecchio comportamento: cancellando
+  // le righe dal db SENZA passare dal Documents API, quindi senza cascata.
+  const { trovaOrfani, eliminaOrfani } = require(path.join(radice, 'src/cascata'));
+  const base9 = await totali();
+
+  const wo = await portafoglio(ada, 'WO'); // 2 categorie × 3 transazioni, 2 consigli, 2 salvadanaio
+  await q(W).delete({ where: { id: wo.w.id } }); // → categorie, transazioni, salvadanaio, consigli orfani
+  const wp = await portafoglio(ada, 'WP'); // portafoglio LEGITTIMO, non va toccato
+  await q(C).delete({ where: { id: wp.cat[0].id } }); // → 3 transazioni e 1 consiglio senza categoria
+  const wn = await D(W).create({ data: { Nome: 'WN', Budget: 10 } }); // senza utente
+  const cn = await D(C).create({ data: { Nome: 'WN-A', Budget_categoria: 5, wallet: wn.documentId } });
+  for (const i of [1, 2]) await D(T).create({ data: { Descrizione: `WN-${i}`, Importo: 5, Data: '2026-11-1' + i, categorie: cn.documentId } });
+
+  const primaPulizia = await totali();
+  let o = await trovaOrfani(app);
+  assert.strictEqual(o.categorie.length, 2, 'categorie orfane');
+  assert.strictEqual(o.transazioni, 9, 'transazioni orfane: 6 di categorie orfane + 3 senza categoria');
+  assert.strictEqual(o.salvadanaio, 2);
+  assert.strictEqual(o.consigli, 3, 'consigli orfani: 2 di categorie orfane + 1 senza categoria');
+  assert.strictEqual(o.totale, 16);
+  assert.deepStrictEqual(o.walletSenzaUtente.map((w) => [w.Nome, w.categorie, w.transazioni]), [['WN', 1, 2]]);
+  assert.deepStrictEqual(await totali(), primaPulizia, "l'anteprima non deve cancellare niente");
+
+  // Senza il flag: via gli orfani, restano il wallet senza utente e il portafoglio legittimo.
+  let eliminati = await eliminaOrfani(app);
+  assert.deepStrictEqual(eliminati, { wallet: 0, categorie: 2, transazioni: 9, salvadanaio: 2, consigli: 3 });
+  o = await trovaOrfani(app);
+  assert.strictEqual(o.totale, 0);
+  assert.strictEqual(o.walletSenzaUtente.length, 1, 'il wallet senza utente non si tocca senza --wallet-senza-utente');
+  assert.strictEqual(await conta(T, { categorie: { documentId: cn.documentId } }), 2);
+  assert.strictEqual(await conta(C, { wallet: { documentId: wp.w.documentId } }), 1, 'WP: resta la categoria B');
+  assert.strictEqual(await conta(T, { categorie: { wallet: { documentId: wp.w.documentId } } }), 3, 'WP: restano le transazioni di B');
+  assert.strictEqual(await conta(S, { wallet: { documentId: wp.w.documentId } }), 2, 'WP: resta il salvadanaio');
+  assert.deepStrictEqual(await eliminaOrfani(app), { wallet: 0, categorie: 0, transazioni: 0, salvadanaio: 0, consigli: 0 }, 'seconda esecuzione: nulla da fare');
+
+  // Col flag: via anche il wallet senza utente, con tutto il suo contenuto.
+  eliminati = await eliminaOrfani(app, { walletSenzaUtente: true });
+  assert.deepStrictEqual(eliminati, { wallet: 1, categorie: 1, transazioni: 2, salvadanaio: 0, consigli: 0 });
+  o = await trovaOrfani(app);
+  assert.strictEqual(o.totale, 0);
+  assert.strictEqual(o.walletSenzaUtente.length, 0);
+
+  // Pulizia del portafoglio legittimo: si torna esattamente alla base.
+  await D(W).delete({ documentId: wp.w.documentId });
+  assert.deepStrictEqual(await totali(), base9, 'dopo la pulizia i dati tornano a quelli di partenza');
+  assert.deepStrictEqual(await orfani(), nessunOrfano);
+
+  // ── 6. Accesso chiuso: gli account li crea solo l'amministratore ───────────
+  r = await http('POST', '/api/auth/local/register', null, { username: 'intruso', email: 'intruso@example.com', password: 'Prova1234!' });
+  assert.strictEqual(r.status, 403, 'la registrazione deve essere chiusa');
+  assert.strictEqual(await q(USER).findOne({ where: { username: 'intruso' } }), null, 'nessun utente deve essere stato creato');
+  assert.strictEqual((await http('POST', '/api/auth/forgot-password', null, { email: 'ada@example.com' })).status, 403);
+  assert.strictEqual((await http('POST', '/api/auth/reset-password', null, { code: 'x', password: 'Prova1234!', passwordConfirmation: 'Prova1234!' })).status, 403);
+  assert.strictEqual((await http('GET', '/api/auth/email-confirmation?confirmation=x')).status, 403);
+  assert.strictEqual((await http('POST', '/api/auth/send-email-confirmation', null, { email: 'ada@example.com' })).status, 403);
+  // Chi ha un account (creato dall'admin) entra, e cambia la propria password dal Profilo.
+  r = await http('POST', '/api/auth/local', null, { identifier: 'ada@example.com', password: 'Prova1234!' });
+  assert.strictEqual(r.status, 200, 'il login deve funzionare');
+  assert.strictEqual((await http('POST', '/api/auth/change-password', jAda, { currentPassword: 'sbagliata', password: 'Nuova12345!', passwordConfirmation: 'Nuova12345!' })).status, 400);
+  assert.strictEqual((await http('POST', '/api/auth/change-password', jAda, { currentPassword: 'Prova1234!', password: 'Nuova12345!', passwordConfirmation: 'Nuova12345!' })).status, 200);
+  assert.strictEqual((await http('POST', '/api/auth/local', null, { identifier: 'ada@example.com', password: 'Nuova12345!' })).status, 200);
+
+  // ── 7. Chiavi AI cifrate nel database ──────────────────────────────────────
+  const { cifraEsistenti, PREFISSO } = require(path.join(radice, 'src/chiavi-ai'));
+  const llm = require(path.join(radice, 'src/api/analisi/services/llm-client'));
+  const colonna = app.db.metadata.get(USER).attributes.aiChiave.columnName;
+  const grezzo = async (u) => (await app.db.connection('up_users').where({ id: u.id }).first())[colonna];
+
+  r = await http('PUT', `/api/users/${ada.id}`, jAda, { aiMotore: 'openrouter', aiChiave: 'sk-test-12345', aiChiaveImpostata: true });
+  assert.strictEqual(r.status, 200, `PUT chiave: ${JSON.stringify(r.body?.error)}`);
+  const salvata = await grezzo(ada);
+  assert.ok(salvata.startsWith(PREFISSO), 'la chiave nel database deve essere cifrata');
+  assert.ok(!salvata.includes('sk-test'), 'la chiave in chiaro non deve comparire nel database');
+  assert.strictEqual(llm.chiaveDiUtente(await utenti.fetch(ada.id), 'openrouter'), 'sk-test-12345', 'chiaveDiUtente la decifra');
+  // L'API non la restituisce, e dice solo che c'è.
+  r = await http('GET', '/api/users/me', jAda);
+  assert.strictEqual(r.body.aiChiave, undefined);
+  assert.strictEqual(r.body.aiChiaveImpostata, true);
+  // Salvare altro (senza toccare la chiave) non la altera né la ricifra.
+  await http('PUT', `/api/users/${ada.id}`, jAda, { aiModello: 'altro-modello' });
+  assert.strictEqual(await grezzo(ada), salvata);
+  // Il form dell'admin rimanda il valore cifrato com'è: non si cifra due volte.
+  await utenti.edit(ada.id, { aiChiave: salvata });
+  assert.strictEqual(await grezzo(ada), salvata);
+  assert.strictEqual(llm.chiaveDiUtente(await utenti.fetch(ada.id), 'openrouter'), 'sk-test-12345');
+
+  // Vecchia installazione: una chiave in chiaro, scritta senza passare dal lifecycle.
+  await app.db.connection('up_users').where({ id: bob.id }).update({ [colonna]: 'sk-vecchia-in-chiaro' });
+  assert.strictEqual(await grezzo(bob), 'sk-vecchia-in-chiaro');
+  assert.strictEqual(llm.chiaveDiUtente(await utenti.fetch(bob.id), 'openrouter'), 'sk-vecchia-in-chiaro', 'finché non migrata si legge lo stesso');
+  await cifraEsistenti(app);
+  assert.ok((await grezzo(bob)).startsWith(PREFISSO), 'il bootstrap deve cifrare le chiavi vecchie');
+  assert.strictEqual(llm.chiaveDiUtente(await utenti.fetch(bob.id), 'openrouter'), 'sk-vecchia-in-chiaro');
 
   // ── 5. SSRF: con AI_URL_PRIVATI=blocca l'indirizzo privato è rifiutato ─────
   const provaAi = (url) => http('POST', '/api/analisi-test-ai', jAda, { motore: 'ollama', url, modello: 'x' });

@@ -1,6 +1,7 @@
 'use strict';
 
-// Restringe gli endpoint /api/users/* al solo utente che chiama: update, find,
+// Restringe gli endpoint /api/users/* al solo utente che chiama e chiude
+// registrazione e recupero password (vedi in fondo). Utenti: update, find,
 // findOne, count, create, destroy. L'app modifica il profilo con `PUT /api/users/:id` (nome, email, orario delle
 // notifiche, impostazioni AI), e per farlo il permesso `update` dev'essere
 // acceso sul ruolo Authenticated.
@@ -71,6 +72,31 @@ module.exports = (plugin) => {
   const nonConsentito = (ctx) => ctx.forbidden('Operazione non consentita');
   plugin.controllers.user.create = nonConsentito;
   plugin.controllers.user.destroy = nonConsentito;
+
+  // Accesso: gli account li crea e li gestisce SOLO l'amministratore, dal pannello
+  // Strapi (Content Manager → User, con "confirmed" acceso e ruolo Authenticated).
+  // La registrazione di Strapi è un'impostazione nel database (Advanced settings →
+  // "Enable sign-ups"), aperta di default: qui si chiude nel codice, così non
+  // dipende da come è configurata un'installazione. Stesso discorso per il
+  // recupero password e la conferma email: l'amministratore reimposta la password
+  // dal pannello, e questi endpoint senza un provider email non servirebbero a
+  // niente (anzi, rivelerebbero quali email esistono). `change-password` resta:
+  // l'utente cambia la propria dalla pagina Profilo, con quella attuale.
+  //
+  // Attenzione: `auth` è una FACTORY (`({ strapi }) => ({...})`), a differenza di
+  // `user` che è un oggetto: assegnare proprietà alla funzione non cambia il
+  // controller vero (e la registrazione resterebbe aperta senza dare errori).
+  const chiuso = (messaggio) => (ctx) => ctx.forbidden(messaggio);
+  const messaggioPassword = 'Funzione non disponibile: la password la reimposta l\'amministratore';
+  const authOriginale = plugin.controllers.auth;
+  plugin.controllers.auth = (args) => ({
+    ...(typeof authOriginale === 'function' ? authOriginale(args) : authOriginale),
+    register: chiuso('Registrazione chiusa: gli account li crea l\'amministratore'),
+    forgotPassword: chiuso(messaggioPassword),
+    resetPassword: chiuso(messaggioPassword),
+    emailConfirmation: chiuso(messaggioPassword),
+    sendEmailConfirmation: chiuso(messaggioPassword),
+  });
 
   return plugin;
 };
