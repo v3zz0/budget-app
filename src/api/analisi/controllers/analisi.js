@@ -9,6 +9,7 @@ const llmFactory = require('../services/llm-client');
 const diffFactory = require('../services/diff-engine');
 const sellaFactory = require('../services/sella-parser');
 const autoCategoriaFactory = require('../services/auto-categoria');
+const { verificaUrlAi } = require('../services/url-ai');
 
 const pdfParser = pdfParserFactory();
 const diffEngine = diffFactory();
@@ -78,7 +79,18 @@ module.exports = {
       const files = ctx.request.files;
 
       // Motore AI scelto dall'utente nelle impostazioni dell'app.
-      const llm = llmFactory(configAi(ctx.state.user));
+      const configUtente = configAi(ctx.state.user);
+      // Un indirizzo non consentito (rete privata con AI_URL_PRIVATI=blocca) si
+      // dice subito e chiaramente: dentro l'analisi diventerebbe un generico
+      // "il modello non ha risposto".
+      if (configUtente.url) {
+        try {
+          await verificaUrlAi(configUtente.url);
+        } catch (e) {
+          return ctx.badRequest(e.message);
+        }
+      }
+      const llm = llmFactory(configUtente);
 
       if (!walletId || !mese) {
         return ctx.badRequest('walletId e mese sono obbligatori');

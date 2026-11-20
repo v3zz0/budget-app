@@ -6,6 +6,9 @@
 //   - "openrouter" -> API compatibile OpenAI, con chiave (OpenRouter o
 //                     qualsiasi altro servizio con lo stesso formato).
 
+const { verificaUrlAi, bloccaPrivati } = require('./url-ai');
+const { decifra } = require('../../../chiavi-ai');
+
 const URL_DEFAULT = process.env.OLLAMA_URL || 'http://ollama:11434';
 const MODELLO_DEFAULT = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
 
@@ -125,6 +128,16 @@ module.exports = (config = {}) => {
   const modello = config.modello || MODELLO_DEFAULT;
   const chiave = config.chiave || '';
 
+  // Un indirizzo scritto dall'utente (config.url) si controlla prima di ogni
+  // chiamata (vedi url-ai.js); quello predefinito dell'amministratore no.
+  // Con il blocco attivo niente redirect: un indirizzo pubblico che rimanda a
+  // uno interno aggirerebbe il controllo.
+  const urlDellUtente = !!config.url;
+  async function chiama(indirizzo, opzioni, ms) {
+    if (urlDellUtente) await verificaUrlAi(url);
+    return fetchConTimeout(indirizzo, { ...opzioni, ...(bloccaPrivati() && { redirect: 'error' }) }, ms);
+  }
+
   // Cose che l'utente deve sapere sul risultato (troncamenti, passi saltati).
   // Le raccoglie il client e le legge il controller: un limite che scatta senza
   // dirlo si legge come "ho guardato tutto", ed è la bugia peggiore che un
@@ -167,7 +180,7 @@ module.exports = (config = {}) => {
   }
 
   async function chiamaOllama(prompt, ms) {
-    const res = await fetchConTimeout(`${url}/api/generate`, {
+    const res = await chiama(`${url}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -189,7 +202,7 @@ module.exports = (config = {}) => {
     // Di default non serve chiave API: il server gira in locale.
     const headers = { 'Content-Type': 'application/json' };
     if (chiave) headers.Authorization = `Bearer ${chiave}`;
-    const res = await fetchConTimeout(`${url}/v1/chat/completions`, {
+    const res = await chiama(`${url}/v1/chat/completions`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -207,7 +220,7 @@ module.exports = (config = {}) => {
 
   async function chiamaOpenRouter(prompt, ms) {
     if (!chiave) throw new Error('OpenRouter: chiave API non configurata');
-    const res = await fetchConTimeout(`${url}/chat/completions`, {
+    const res = await chiama(`${url}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -385,7 +398,8 @@ Rispondi con JSON: { "giudizio": "testo qui" }`;
 // diversi (locale l'uno, cloud l'altro), condividere il campo significherebbe
 // perdere una chiave ogni volta che si cambia motore.
 function chiaveDiUtente(user, motore) {
-  return motore === 'llamacpp' ? user?.aiChiaveLlamacpp : user?.aiChiave;
+  // Nel database sono cifrate (src/chiavi-ai.js): qui si decifrano, e solo qui.
+  return decifra(motore === 'llamacpp' ? user?.aiChiaveLlamacpp : user?.aiChiave);
 }
 
 // Esposte solo per i check in tests/spezza.test.js e tests/llm-timeout.test.js

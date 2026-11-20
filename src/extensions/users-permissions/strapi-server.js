@@ -1,6 +1,7 @@
 'use strict';
 
-// L'app modifica il profilo con `PUT /api/users/:id` (nome, email, orario delle
+// Restringe gli endpoint /api/users/* al solo utente che chiama: update, find,
+// findOne, count, create, destroy. L'app modifica il profilo con `PUT /api/users/:id` (nome, email, orario delle
 // notifiche, impostazioni AI), e per farlo il permesso `update` dev'essere
 // acceso sul ruolo Authenticated.
 //
@@ -33,6 +34,43 @@ module.exports = (plugin) => {
 
     return updateOriginale(ctx);
   };
+
+  // Lettura: ognuno vede solo sé stesso.
+  //
+  // `find` serve all'app anche se non la chiama mai: i controller owner-aware
+  // filtrano per `users_permissions_user`, e Strapi 5 valida i filtri sulle
+  // relazioni contro i permessi del ruolo. Senza `user.find` abilitato,
+  // /api/wallets risponde `Invalid key users_permissions_user`. Ma abilitato
+  // di suo elenca TUTTI gli utenti (nome ed email) a chiunque sia autenticato:
+  // con più utenti è una fuga di dati. Quindi il permesso resta acceso e il
+  // controller restituisce solo l'utente stesso, riusando `me`.
+  const me = plugin.controllers.user.me;
+
+  plugin.controllers.user.find = async (ctx) => {
+    await me(ctx);
+    if (ctx.body) ctx.body = [ctx.body]; // stessa forma di prima: un array
+  };
+
+  plugin.controllers.user.findOne = async (ctx) => {
+    if (!ctx.state.user) return ctx.unauthorized();
+    // Un id altrui risponde come se non esistesse: non si conferma che c'è.
+    if (String(ctx.params.id) !== String(ctx.state.user.id)) return ctx.notFound();
+    return me(ctx);
+  };
+
+  // Rivelerebbe quanti utenti ci sono.
+  plugin.controllers.user.count = async (ctx) => {
+    if (!ctx.state.user) return ctx.unauthorized();
+    ctx.body = 1;
+  };
+
+  // Scrittura: l'app non crea né cancella utenti da qui (la registrazione passa
+  // da /auth/local/register). Se qualcuno abilitasse questi permessi nel ruolo,
+  // `destroy` cancellerebbe QUALUNQUE utente e `create` ne creerebbe con
+  // qualunque ruolo. Account e ruoli si gestiscono dal pannello admin.
+  const nonConsentito = (ctx) => ctx.forbidden('Operazione non consentita');
+  plugin.controllers.user.create = nonConsentito;
+  plugin.controllers.user.destroy = nonConsentito;
 
   return plugin;
 };

@@ -1,5 +1,9 @@
 "use strict";
 
+const cascata = require("./cascata");
+const permessi = require("./permessi");
+const chiaviAi = require("./chiavi-ai");
+
 // Il testo del consiglio lo scrive l'LLM, ma i numeri glieli passiamo noi già
 // calcolati: il modello non deve MAI decidere un importo. Se non risponde o non
 // è configurato, resta una frase costruita dai numeri — il consiglio è valido
@@ -60,6 +64,11 @@ async function spesoDelPeriodo(strapi, walletDocumentId, dal, al) {
 
 module.exports = {
   register({ strapi }) {
+    // Eliminare un portafoglio o una categoria elimina anche i loro figli.
+    cascata.registra(strapi);
+    // Le chiavi AI si salvano cifrate, da REST come dall'admin.
+    chiaviAi.registra(strapi);
+
     strapi.cron.add({
       // A fine mese (ultimo giorno alle 23) si fanno due cose:
       //  1. si CHIUDE il mese che finisce, scrivendoci quanto è stato speso
@@ -296,5 +305,19 @@ module.exports = {
       },
     });
   },
-  bootstrap(/*{ strapi }*/) {},
+  async bootstrap({ strapi }) {
+    // Un seed fallito non deve impedire l'avvio: peggio un 403 su una funzione
+    // che un server che non parte.
+    try {
+      await permessi.seedPermessi(strapi);
+    } catch (e) {
+      strapi.log.error(`Permessi: seed non riuscito (${e.message})`);
+    }
+    // Cifra le chiavi AI rimaste in chiaro dalle versioni precedenti.
+    try {
+      await chiaviAi.cifraEsistenti(strapi);
+    } catch (e) {
+      strapi.log.error(`Chiavi AI: migrazione non riuscita (${e.message})`);
+    }
+  },
 };
