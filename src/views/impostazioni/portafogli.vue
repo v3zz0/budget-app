@@ -85,7 +85,7 @@ function elimina() {
   // La conferma nomina il portafoglio, così un click distratto non basta.
   confirm.require({
     header: "Eliminare il portafoglio?",
-    message: `Stai per eliminare "${w.Nome}" con le sue categorie, transazioni e lo storico del salvadanaio: non li vedrai più e non si possono recuperare.`,
+    message: `Stai per eliminare "${w.Nome}" con le sue categorie, transazioni e lo storico del salvadanaio: verranno eliminati definitivamente e non si possono recuperare.`,
     acceptLabel: "Elimina",
     rejectLabel: "Annulla",
     acceptProps: { severity: "danger" },

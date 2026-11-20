@@ -162,8 +162,11 @@ const quota = (c) => (c.budget > 0 ? Math.min(c.speso / c.budget, 1) * 100 : 0);
     </div>
 
     <template v-if="report">
-      <!-- Il periodo dell'estratto non corrisponde al mese chiesto, o altri avvisi -->
-      <div v-if="!report.validazione?.ok && report.validazione?.warning" class="flex gap-3 rounded-xl border border-avviso bg-avviso/10 p-3 text-sm text-testo">
+      <!-- Avvisi del server: periodo diverso dal mese chiesto, documento non letto,
+           giudizio non generato... Si mostrano SEMPRE quando ci sono, non solo con
+           `ok` falso: il server li scrive proprio qui perché un report parziale
+           deve dirlo da sé, e `ok` resta vero anche quando l'AI non ha risposto. -->
+      <div v-if="report.validazione?.warning" class="flex gap-3 rounded-xl border border-avviso bg-avviso/10 p-3 text-sm text-testo">
         <i class="pi pi-exclamation-triangle mt-0.5 text-avviso" />{{ report.validazione.warning }}
       </div>
 
@@ -212,8 +215,17 @@ const quota = (c) => (c.budget > 0 ? Math.min(c.speso / c.budget, 1) * 100 : 0);
 
       <!-- Movimenti in banca ma non nell'app -->
       <section class="flex flex-col gap-2.5">
+        <!-- Con un avviso (lettura parziale o fallita) "tutte registrate" non si può
+             affermare: si dice solo che fra quelle lette non ne mancano. -->
         <div
-          v-if="!report.mancanti.length"
+          v-if="!report.mancanti.length && report.validazione?.warning"
+          class="flex items-center gap-2.5 rounded-xl border border-bordo bg-card p-3.5 text-sm text-testo2"
+        >
+          <i class="pi pi-info-circle" />
+          Nessun movimento mancante fra quelli letti (vedi l'avviso in alto).
+        </div>
+        <div
+          v-else-if="!report.mancanti.length"
           class="flex items-center gap-2.5 rounded-xl border border-positivo bg-card p-3.5 text-sm text-testo"
         >
           <i class="pi pi-check-circle text-positivo" />

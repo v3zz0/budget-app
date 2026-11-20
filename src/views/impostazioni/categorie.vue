@@ -82,7 +82,7 @@ function eliminaSelezionate() {
   const ids = [...selezionate];
   confirm.require({
     header: "Eliminare le categorie?",
-    message: `Stai per eliminare ${ids.length} ${ids.length === 1 ? "categoria" : "categorie"} con le transazioni collegate: non le vedrai più e non si possono recuperare.`,
+    message: `Stai per eliminare ${ids.length} ${ids.length === 1 ? "categoria" : "categorie"} con le transazioni e i consigli collegati: verranno eliminati definitivamente e non si possono recuperare.`,
     acceptLabel: "Elimina",
     rejectLabel: "Annulla",
     acceptProps: { severity: "danger" },
