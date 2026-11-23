@@ -8,6 +8,10 @@ const CONSEGNA = 'api::notifica-consegna.notifica-consegna';
 const TRANSAZIONI = 'api::transazioni.transazioni';
 const CATEGORIE = 'api::categorie.categorie';
 
+// Portafogli dell'utente: quelli che ha creato e il condiviso di cui è membro
+// (stessa regola di src/accesso.js, qui nella forma di db.query).
+const suoi = (utente) => ({ $or: [{ users_permissions_user: utente }, { membro: utente }] });
+
 function evento(tipo, ref, periodo, dettagli) {
   return { tipo, tag: trasporto.sha(`${tipo}:${ref}:${periodo}`).slice(0, 32), ...dettagli };
 }
@@ -15,7 +19,17 @@ function evento(tipo, ref, periodo, dettagli) {
 async function scadenze(strapi, utente, data, anticipo) {
   const giorno = calendario.aggiungiGiorni(data, anticipo);
   const templates = await strapi.db.query(TRANSAZIONI).findMany({
-    where: { TransazioneRicorrente: true, categorie: { wallet: { users_permissions_user: utente } } },
+    // In pausa: non scatta, quindi niente promemoria (come il cron, src/ricorrenti.js)
+    // $and esplicito: in db.query un $or al primo livello insieme a un $or
+    // dentro una relazione perde le parentesi (provato su MySQL: la ricorrente
+    // in pausa passava lo stesso).
+    where: {
+      $and: [
+        { TransazioneRicorrente: true },
+        { $or: [{ InPausa: false }, { InPausa: { $null: true } }] },
+        { categorie: { wallet: suoi(utente) } },
+      ],
+    },
     select: ['documentId', 'Data', 'RicorrenzaTemporale'],
   });
   return templates.filter((t) => calendario.scadeIl(t, giorno))
@@ -29,7 +43,7 @@ async function sforamenti(strapi, utente, data) {
       Budget_categoria: { $gt: 0 },
       Tipo: 'uscita', // per un'entrata il budget è "entrata prevista", non un tetto
       wallet: { $and: [
-        { users_permissions_user: utente },
+        suoi(utente),
         { $or: [{ escludiDaStatistiche: false }, { escludiDaStatistiche: null }] },
       ] },
     },
@@ -109,6 +123,27 @@ async function elabora(strapi, now = new Date()) {
   }
 }
 
+/**
+ * Push immediato a chi riceve un invito a un portafoglio condiviso. Il
+ * messaggio non contiene nomi né email: solo il riferimento all'invito, il
+ * dettaglio si vede dentro l'app. Best-effort: un invio fallito non blocca
+ * l'invito, che resta comunque visibile in Home.
+ */
+async function notificaInvito(strapi, utenteId, invitoDocumentId) {
+  const vapid = trasporto.configurazione();
+  if (!vapid) return;
+  const dispositivi = await strapi.db.query(DEVICE).findMany({
+    where: { chiavePubblica: vapid.publicKey, utente: { id: utenteId, blocked: false } },
+    populate: { utente: { select: ['id'] } },
+  });
+  const avviso = evento('invito', invitoDocumentId, 'invito', { riferimento: invitoDocumentId });
+  const scade = calendario.aggiungiGiorni(calendario.oraLocale(new Date()).data, 62);
+  for (const d of dispositivi) {
+    if (!utilizzabile(d, vapid, Date.now())) continue;
+    await consegna(strapi, d, avviso, scade, vapid);
+  }
+}
+
 function registraCron(strapi) {
   let inCorso = false;
   strapi.cron.add({
@@ -137,4 +172,4 @@ function registraCron(strapi) {
   });
 }
 
-module.exports = { elabora, registraCron };
+module.exports = { elabora, registraCron, notificaInvito };

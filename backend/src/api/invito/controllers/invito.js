@@ -76,6 +76,12 @@ module.exports = {
     if (gia) return errore(ctx, 400, 'C\'è già un invito in attesa per questo portafoglio');
     const scadenza = new Date(Date.now() + GIORNI_VALIDITA * 86400000).toISOString().slice(0, 10);
     const i = await strapi.db.query(INVITO).create({ data: { email: mail, stato: 'in_attesa', scadenza, wallet: w.id, da: u.id, a: destinatario.id } });
+    // Push a chi è invitato, se ha attivato le notifiche
+    try {
+      await require('../../../notifiche/pianifica').notificaInvito(strapi, destinatario.id, i.documentId);
+    } catch {
+      strapi.log.warn('Notifiche: avviso di invito non inviato');
+    }
     ctx.body = { id: i.documentId, email: mail, scadenza };
   },
 

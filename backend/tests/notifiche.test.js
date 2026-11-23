@@ -196,6 +196,41 @@ test('API, pianificazione, isolamento e persistenza su MySQL di prova', { skip: 
   const scaduto = await api('PUT', registrazione, tokenB, diB);
   assert.equal((await api('POST', registrazione + '/' + scaduto.body.impronta + '/prova', tokenB)).status, 404);
   assert.equal(await app.db.query(DEVICE).count({ where: { impronta: scaduto.body.impronta } }), 0);
+  // ── Portafoglio condiviso: il membro riceve gli avvisi del condiviso, e solo quelli ──
+  const condiviso = await app.documents('api::wallet.wallet').create({ data: {
+    Nome: 'Casa', users_permissions_user: a.documentId, membro: b.documentId, condiviso: true,
+  } });
+  const catCasa = await app.documents('api::categorie.categorie').create({ data: { Nome: 'Casa', wallet: condiviso.documentId, Budget_categoria: 100 } });
+  const ricCasa = await app.documents('api::transazioni.transazioni').create({ data: {
+    Descrizione: 'Descrizione riservata', Importo: 50, Data: '2026-01-31', TransazioneRicorrente: true, categorie: catCasa.documentId,
+  } });
+  await app.documents('api::transazioni.transazioni').create({ data: { Importo: 130, Data: '2026-02-10', categorie: catCasa.documentId } });
+  // una ricorrente in pausa non manda promemoria
+  const inPausa = await app.documents('api::transazioni.transazioni').create({ data: {
+    Importo: 9, Data: '2026-01-31', TransazioneRicorrente: true, InPausa: true, categorie: catCasa.documentId,
+  } });
+  const dispB = { ...iscrizione(nuovo + '-membro'), idBrowser: randomUUID() };
+  assert.equal((await api('PUT', registrazione, tokenB, dispB)).status, 200);
+  assert.equal((await api('PUT', '/notifiche/preferenze', tokenB, { orario: '09:15', scadenze: 1, budget: true })).status, 200);
+  const prima = inviati.length;
+  await elabora(app, new Date('2026-02-27T09:15:00Z'));
+  // (b riceve anche gli avvisi del suo portafoglio personale: quelli si tolgono qui)
+  const suoi = [secondo.ricorrente.documentId, secondo.categoria.documentId];
+  const aB = inviati.slice(prima).filter((p) => p.endpoint === dispB.endpoint && !suoi.includes(p.riferimento));
+  assert.deepEqual(aB.map((p) => [p.tipo, p.riferimento]).sort(), [['budget', catCasa.documentId], ['scadenza', ricCasa.documentId]].sort(),
+    'il membro riceve scadenza e sforamento del condiviso');
+  assert.ok(!inviati.some((p) => p.riferimento === inPausa.documentId), 'niente promemoria per una ricorrente in pausa');
+  assert.ok(!aB.some((p) => [primo.ricorrente.documentId, primo.categoria.documentId].includes(p.riferimento)), 'niente dei personali di chi ha creato');
+
+  // ── Invito: push immediato al destinatario, senza nomi né email nel messaggio ──
+  const daCondividere = (await api('POST', '/wallets', tokenA, { data: { Nome: 'Vacanze' } })).body.data;
+  const giaInviati = inviati.length;
+  const invito = await api('POST', '/inviti', tokenA, { wallet: daCondividere.documentId, email: b.email });
+  assert.equal(invito.status, 200, JSON.stringify(invito.body));
+  const push = inviati.slice(giaInviati);
+  assert.deepEqual(push.map((p) => [p.tipo, p.endpoint, p.riferimento]), [['invito', dispB.endpoint, invito.body.id]]);
+  assert.ok(!JSON.stringify(push).includes(a.email) && !JSON.stringify(push).includes('prima'), 'nessun dato personale nel push');
+
   await app.db.query('plugin::users-permissions.user').delete({ where: { id: a.id } });
   assert.equal(await app.db.query(DEVICE).count({ where: { impronta: trasporto.sha(altroDispositivo.endpoint) } }), 0);
 });

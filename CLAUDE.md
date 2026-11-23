@@ -301,6 +301,18 @@ sovrascrivono i core controller per legare ogni record al suo proprietario:
 Un filtro `campo: { $ne: valore }` in SQL scarta anche le righe NULL: sui
 campi aggiunti dopo (Tipo, InPausa, Nascosta) usare `$or` col `$null` oppure
 normalizzare in bootstrap.
+In `strapi.db.query` un `$or` al primo livello **insieme** a un `$or` dentro una
+relazione perde le parentesi (verificato su MySQL): in quel caso scrivere
+`where: { $and: [ {…}, { $or: […] }, { relazione: { $or: […] } } ] }`.
+
+Notifiche push (`src/notifiche/`): scadenze e sforamenti di tutti i portafogli
+dell'utente, **compreso il condiviso di cui è membro**; le ricorrenti in pausa
+non mandano promemoria; un invito manda subito un push al destinatario (senza
+nomi né email nel messaggio). Il test d'integrazione gira solo con un MySQL di
+prova: `docker run -d --rm --name mysql-notifiche -e MYSQL_ROOT_PASSWORD=x
+-e MYSQL_DATABASE=budget_push_test -e MYSQL_USER=budget_test
+-e MYSQL_PASSWORD=temporary_budget_test -p 13307:3306 mysql:8`, poi
+`BUDGET_NOTIFICHE_TEST_MYSQL_PORT=13307 node tests/notifiche.test.js`.
 
 Le chiavi mese si costruiscono a mano (`primoDelMese`), mai con `toISOString()`
 su una data locale: appena il container ha un fuso a est di Greenwich quel

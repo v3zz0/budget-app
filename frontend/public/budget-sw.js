@@ -15,6 +15,9 @@ function avviso(dati) {
   }
 
   if (!idValido.test(dati.riferimento)) return null;
+  if (dati.tipo === "invito") {
+    return { titolo: "Ti hanno invitato in un portafoglio condiviso", corpo: "Apri Budget App per accettare o rifiutare.", url: "/" };
+  }
   if (dati.tipo === "scadenza" && /^\d{4}-\d{2}-\d{2}$/.test(dati.giorno)) {
     const parametri = new URLSearchParams({ scadenza: dati.riferimento, giorno: dati.giorno });
     return { titolo: "Hai una scadenza in arrivo", corpo: "Apri Budget App per vedere i dettagli.", url: `/ricorrenti?${parametri}` };
