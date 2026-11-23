@@ -41,9 +41,9 @@ const sezioni = computed(() => [
   { id: "ai", icona: "ph-sparkle", titolo: "Analisi AI", sotto: MOTORI[auth.userInfo.aiMotore] || "Quale modello analizza gli estratti", comp: Ai },
 ]);
 
-// Schermi stretti: o l'elenco o la sezione, come due pagine (con "indietro").
-// Su schermo largo restano le due colonne del mockup.
-const mq = matchMedia("(max-width: 1060px)");
+// Telefono: o l'elenco o la sezione, come due pagine (con "indietro").
+// Da 768px in su (tablet, computer) le due colonne del mockup.
+const mq = matchMedia("(max-width: 767px)");
 const stretto = ref(mq.matches);
 const aggiorna = () => (stretto.value = mq.matches);
 mq.addEventListener("change", aggiorna);
@@ -76,10 +76,10 @@ function indietro() {
       <i class="ph-bold ph-arrow-left" />Impostazioni
     </button>
 
-    <div class="grid grid-cols-[minmax(0,1fr)] items-start gap-3 min-[1061px]:grid-cols-[340px_minmax(0,1fr)]">
+    <div class="grid grid-cols-[minmax(0,1fr)] items-start gap-3 md:grid-cols-[280px_minmax(0,1fr)] min-[1061px]:grid-cols-[340px_minmax(0,1fr)]">
       <nav
         v-if="mostraElenco"
-        class="reveal grid min-w-0 grid-cols-[minmax(0,1fr)] content-start self-start gap-1.5 min-[761px]:max-[1060px]:grid-cols-2 min-[1061px]:sticky min-[1061px]:top-6"
+        class="reveal grid min-w-0 grid-cols-[minmax(0,1fr)] content-start self-start gap-1.5 md:sticky md:top-6"
         aria-label="Sezioni delle impostazioni"
       >
         <a
