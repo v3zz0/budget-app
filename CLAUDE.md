@@ -58,6 +58,13 @@ Stato del porting Flutter → Vue (fasi):
      SSRF". Da lanciare una volta sul database vero
    - **Ancora aperto:** cambiare o perdere `AI_KEYS_SECRET` rende illeggibili le
      chiavi AI salvate (gli utenti le reinseriscono)
+6. ✅ Redesign "demoThomas" (2026-11-23, branch `redesign-demothomas`): grafica
+   nuova (antracite calda, blocchi pieni, Giorno/Notte/Sistema), entrate,
+   Impostazioni in una pagina, Transazioni con form ed elenco, Home dashboard,
+   salvadanaio a cartelle, Analisi con mancanti/solo app/importo diverso,
+   **portafoglio condiviso** con una seconda persona. Specifica e mockup in
+   `budgetApp/demoThomas/` (`progetto.md` fa fede). Provato nel browser su
+   SQLite con due utenti; **non** ancora su dati di produzione.
 
 ## Struttura repository
 
@@ -126,23 +133,59 @@ Attenzione ai nomi: sono misti italiano/inglese e alcuni sono al plurale
 "sbagliato" (`transazionis`, `categories`). Non normalizzarli: sono chiavi API.
 
 **Wallet** (`api::wallet.wallet`)
-`Nome` string · `Budget` decimal · `Salvadanaio` decimal
-· `categories` 1-n → Categorie · `salvadanaios` 1-n → Salvadanaio
-· `users_permissions_user` n-1 → User *(campo di ownership, mai modificabile dal client)*
+`Nome` string · `Budget` decimal · `escludiDaStatistiche` bool
+· `categories` 1-n → Categorie · `salvadanaios` 1-n → Salvadanaio (vecchio)
+· `users_permissions_user` n-1 → User *(chi l'ha creato: ownership, mai modificabile dal client)*
+· condiviso (§12 di `progetto.md`): `condiviso` bool · `membro` n-1 → User *(l'altra
+persona, una sola)* · `regolaTipo` enum `meta|proporzionale|personalizzata`
+· `quotaCreatore` decimal 0..1 *(la regola risolta dal server)* · `entrateCreatore`,
+`entrateMembro` decimal. `membro` e `condiviso` cambiano **solo** dagli inviti.
 
 **Categorie** (`api::categorie.categorie`, collection `categories`)
-`Nome` string · `Budget_categoria` decimal · `icona` string *(emoji)*
-· `wallet` n-1 · `transazionis` 1-n
+`Nome` string · `Budget_categoria` decimal *(per le entrate = "entrata prevista")*
+· `icona` string *(emoji)* · `Tipo` enum `uscita|entrata|versamento|rimborso`
+(default `uscita`) · `Nascosta` bool · `wallet` n-1 · `transazionis` 1-n
+
+Il **tipo sta sulla categoria**, non sulla transazione. Lo "speso" conta **solo
+`Tipo = uscita`** ovunque (Home, Anno, consigli, avvisi, chiusura del mese,
+sforamenti dell'analisi): una categoria nuova di tipo diverso va esclusa anche
+lì. `versamento` e `rimborso` sono le due categorie **di sistema** (nascoste)
+del condiviso, create quando si accetta l'invito: così transazione → categoria
+→ wallet resta l'unica catena di proprietà. `Nascosta` = nata da "+ Altro"
+senza "Aggiungi alle mie categorie": fuori dalle pillole e dalle Impostazioni,
+dentro totali, grafici ed export. Il bootstrap porta a `uscita` i `Tipo` NULL.
 
 **Transazioni** (`api::transazioni.transazioni`, collection `transazionis`)
-`Importo` decimal · `Descrizione` string · `Data` date
-· `TransazioneRicorrente` bool *(true = template, non istanza)*
-· `RicorrenzaTemporale` date · `Contanti` bool *(esclusa dal diff con l'estratto conto)*
-· `categorie` n-1
+`Importo` decimal *(sempre positivo: il segno viene dal tipo)* · `Descrizione` string
+· `Data` date · `TransazioneRicorrente` bool *(true = template, non istanza)*
+· `RicorrenzaTemporale` date *(conta solo il giorno)* · `InPausa` bool
+· `Contanti` bool *(esclusa dal confronto con l'estratto conto)* · `categorie` n-1
+· condiviso: `pagatoDa` enum `creatore|membro|cassa` · `quota` decimal *(parte di chi
+ha creato il portafoglio)* · `quotaCassa` decimal *(fissata dal server alla
+creazione: la regola non è retroattiva)* · `creatoDa`, `modificatoDa` n-1 → User
+*(li scrive il server)*
 
-**Salvadanaio** (`api::salvadanaio.salvadanaio`)
-`mese` date *(sempre il primo del mese, es. `2026-08-01`)* · `budgetAllocato` integer
-· `speso` decimal · `risparmiato` decimal *(inserito a mano dall'utente)* · `wallet` n-1
+**Cartelle del salvadanaio** (`api::cartella.cartella`, collection `salvadanai`)
+`Nome` · `Emoji` · `Colore` enum `argilla|nebbia|kaki|pietra|lilla` · `Obiettivo`
+decimal · `Standard` bool *("Risparmi mensili", una per wallet, non eliminabile)*
+· `wallet` n-1 · `movimenti` 1-n
+
+**Movimenti del salvadanaio** (`api::movimento-salvadanaio.movimento-salvadanaio`,
+collection `movimenti_salvadanaio`)
+`Importo` decimal *(+ versamento, − prelievo)* · `Data` · `Nota` · `Mese` `AAAA-MM`
+*(solo nella cartella standard)* · `Provenienza` 1-1 → movimento *(il mese da cui
+arrivano i soldi)* · `Chi` enum `creatore|membro` · `salvadanaio` n-1
+
+**Salvadanaio** (`api::salvadanaio.salvadanaio`) — **vecchio, in sola lettura**
+`mese` date · `budgetAllocato` · `speso` · `risparmiato` · `wallet` n-1. Il cron
+non lo scrive più; il bootstrap porta i `risparmiato` nei movimenti della
+cartella standard (idempotente). Da togliere quando i dati di produzione sono
+stati migrati e controllati.
+
+**Invito** (`api::invito.invito`, collection `inviti`)
+`email` · `stato` enum `in_attesa|accettato|rifiutato|annullato` · `scadenza` date
+(14 giorni) · `wallet`, `da`, `a` n-1. Niente token né email: si invita un
+utente **già esistente** e lo si accetta dentro l'app (banner in Home).
 
 **Consiglio** (`api::consiglio.consiglio`)
 `tipo` enum `alza|abbassa` · `budgetAttuale` decimal · `budgetProposto` decimal
@@ -155,8 +198,9 @@ Attenzione ai nomi: sono misti italiano/inglese e alcuni sono al plurale
 · `aiChiave` string *(private)* · `aiChiaveImpostata` bool
 · `aiChiaveLlamacpp` string *(private)* · `aiChiaveLlamacppImpostata` bool
 (una chiave per motore: openrouter e llama.cpp sono servizi diversi)
-
-Formula risparmio: `risparmiato = budgetAllocato − speso`, solo se positivo.
+· `nomeVisualizzato` string · `coloreAvatar` enum · `tema` enum `sistema|giorno|notte`
+· `avatar` text *(data URL JPEG 256px, scritto **solo** da `POST /api/profilo/foto`,
+mai da `PUT /api/users`: niente Media Library, niente `/uploads` da esporre)*
 
 ## Backend — cosa c'è di custom
 
@@ -168,6 +212,13 @@ sovrascrivono i core controller per legare ogni record al suo proprietario:
   il client non può aggirarlo né sovrascriverlo
 - `findOne`/`update`/`delete` verificano il proprietario risalendo la catena
   (transazione → categoria → wallet → user) e rispondono `notFound` se non combacia
+- "proprietario" vuol dire **chi ha creato il wallet o il suo membro**: la regola
+  sta in **un posto solo**, `src/accesso.js` (`filtroWallet`, `puoUsare`,
+  `walletDiUtente`, `ruolo`), usato dai 5 controller e dalle rotte custom.
+  L'altro membro non deve vedere **nulla** dei portafogli personali di chi l'ha
+  invitato (coperto dall'e2e con prove di mutazione)
+- `wallet.delete`: solo chi l'ha creato. `wallet.update` toglie
+  `users_permissions_user`, `membro`, `condiviso` e ricalcola `quotaCreatore`
 - `create` forza l'owner e valida che il parent (wallet/categoria) sia dell'utente
 - riassegnare un record a un parent altrui è bloccato esplicitamente
 - `salvadanaio.delete` è disabilitato: lo storico non si cancella dal client
@@ -183,13 +234,30 @@ sovrascrivono i core controller per legare ogni record al suo proprietario:
   altrimenti 403 (con più utenti va seedato in bootstrap: fase 5)
 - `POST /api/consiglios/:id/applica` — scrive `budgetProposto` sulla categoria
 - `POST /api/consiglios/:id/segna` — stato `letto` o `ignorato`
+- `POST|DELETE /api/profilo/foto` — foto profilo (campo `foto`, JPG/PNG/WEBP fino
+  a 10 MB): `sharp` la ritaglia quadrata e la riduce a 256px JPEG sul server
+- `/api/salvadanai` (GET stato, POST crea, PUT `/risparmio`, PUT/DELETE `/:id`,
+  POST `/:id/movimenti`, DELETE `/movimenti/:id`) — salvadanaio a cartelle,
+  **nessun CRUD generico**: tutta la logica in `src/salvadanai.js`. Saldi mai
+  sotto zero e spostamenti "da Risparmi mensili" (due movimenti in una
+  transazione DB) verificati sul server. Ogni rotta vuole `wallet`
+- `/api/inviti` (GET, POST, `/:id/accetta|rifiuta|annulla`) e
+  `POST /api/portafogli/:id/esci` — condiviso; si esce solo a conti pari
+  (`src/conti.js`)
 
 ### Servizi di analisi (`src/api/analisi/services/`)
 - `sella-parser.js` — parser **deterministico** per Banca Sella, due formati
   (conto e carta). Regex con separatori `\s*` perché `pdf-parse` attacca i campi.
   Marca l'addebito mensile della carta per non contare due volte le spese.
 - `pdf-parser.js` — testo dal PDF + estrazione del periodo
-- `diff-engine.js` — match banca↔DB (tolleranza 0.01€ e 3 giorni) e sforamenti
+- `diff-engine.js` — `confronta` restituisce `abbinati`, `mancanti`, `soloApp`,
+  `diversi` abbinando **solo movimenti dello stesso tipo** (addebito↔uscita,
+  accredito↔entrata); "importo diverso" = entro 3 giorni e una parola in comune.
+  Il controller toglie i contanti e, nel condiviso, filtra per "di chi è
+  l'estratto conto" (`estratto=mio|cassa`)
+- `csv-parser.js` — CSV generico (`data;descrizione;importo` o dare/avere),
+  letto senza AI prima dell'LLM. Il parser Sella ora tiene gli accrediti
+  (`tipo: 'entrata'`)
 - `llm-client.js` — Ollama/OpenRouter con timeout, budget totale e limite blocchi.
   **Fallback, non fonte primaria**: il parser deterministico ha la precedenza.
 
@@ -217,14 +285,22 @@ sovrascrivono i core controller per legare ogni record al suo proprietario:
   tests/*.test.js; do node $t; done`.
 
 ### Cron (`src/index.js`, `config/server.js` → `cron.enabled: true`)
-- `chiudiEApriMese` — `0 23 28-31 * *`: chiude il mese che finisce scrivendoci
-  lo `speso` reale, poi apre a zero il record del mese successivo per ogni
-  wallet. `risparmiato` non lo tocca mai: quello lo decide l'utente.
+- `chiudiEApriMese` — `0 23 28-31 * *`: chiude il mese nei "Risparmi mensili"
+  di ogni wallet (`salvadanai.chiudiMese`): se l'utente non ha inserito il
+  risparmio vale entrate − uscite (se positivo). Il vecchio salvadanaio non si
+  scrive più.
 - `generaConsigli` — `5 23 28-31 * *`: mediana delle spese sugli ultimi 6 mesi,
   propone di alzare/abbassare i budget. **I numeri li calcola il codice**
   (`motore-consigli.js`), l'LLM scrive solo la frase attorno.
-- `materializzaRicorrenti` — `0 6 * * *`: crea l'istanza del mese per ogni
-  template `TransazioneRicorrente=true` in scadenza oggi
+- `materializzaRicorrenti` — `0 6 * * *` (`src/ricorrenti.js`): crea l'istanza
+  del mese per ogni template `TransazioneRicorrente=true` in scadenza oggi e
+  **non in pausa** (`InPausa` NULL conta come attiva: `$or`, non `$ne`). Copia
+  anche `pagatoDa`/quote del condiviso. Anti-doppione per categoria+descrizione
+  (non importo: cambiarlo a mese iniziato vale dal mese dopo)
+
+Un filtro `campo: { $ne: valore }` in SQL scarta anche le righe NULL: sui
+campi aggiunti dopo (Tipo, InPausa, Nascosta) usare `$or` col `$null` oppure
+normalizzare in bootstrap.
 
 Le chiavi mese si costruiscono a mano (`primoDelMese`), mai con `toISOString()`
 su una data locale: appena il container ha un fuso a est di Greenwich quel
@@ -273,6 +349,8 @@ non ha effetto e non dà errori (era successo: lo ha scoperto il test e2e).
   decifrano in **un solo punto**, `chiaveDiUtente` in `llm-client.js`: non
   leggere i campi chiave altrove. Segreto: `AI_KEYS_SECRET`, in mancanza
   `ENCRYPTION_KEY`. Nessuna rotazione (commento `ponytail:`).
+- `conti.js` — conto tra le due persone del condiviso (§12), funzione pura,
+  **replicata** in `frontend/src/utils/conti.js`: stessi test (esempio −226,10).
 - `permessi.js` — i permessi dell'app per il ruolo Authenticated, seedati a ogni
   avvio (solo aggiunge, mai toglie). Aggiungendo una rotta custom, aggiungere
   qui la sua azione: il test e2e controlla che ogni nome esista davvero.
@@ -300,7 +378,8 @@ non ha effetto e non dà errori (era successo: lo ha scoperto il test e2e).
   arriva a Strapi da lì: sta sulla porta `BUDGET_ADMIN_PORT` (default 1337), da
   limitare al proprio IP. Limiti per rotta: 1 MB di default, 25 MB e 200 s per
   `/api/analisi-estratto-conto` (il client aspetta 3 min: col default nginx di
-  60 s l'analisi lunga finirebbe in 504), 16 MB e 100 s per `/api/scontrino/leggi`.
+  60 s l'analisi lunga finirebbe in 504), 16 MB e 100 s per `/api/scontrino/leggi`, 11 MB per `/api/profilo/foto`;
+  `/emoji/` servito con cache di 30 giorni.
   **Aggiungendo una rotta con upload o tempi lunghi, aggiungere qui la sua location.**
 - `.env` in radice: lo legge compose (variabili `BUDGET_*`, tutte facoltative,
   vedi `.env.example`) e arriva al backend come ambiente (`env_file`). Contiene
@@ -358,6 +437,16 @@ non ha effetto e non dà errori (era successo: lo ha scoperto il test e2e).
   (la migrazione `llamacpp` usa `MODIFY COLUMN`, solo MySQL), `vite` con
   `VITE_API_URL` puntato lì, e pilotare un Chromium isolato (non il Chrome
   dell'utente) con `browser-use` e `BU_CDP_URL`.
+- **Impostazioni** è una pagina sola con le sezioni per hash
+  (`/impostazioni#profilo`, `#portafogli`, `#categorie`, `#ricorrenti`,
+  `#aspetto`, `#export`, `#notifiche`, `#ai`); i vecchi indirizzi
+  (`/impostazioni/ai`, `/ricorrenti`, `/export`) reindirizzano lì.
+- **Transazioni**: `/transazioni/:id` apre la modifica nello stesso foglio;
+  `?tipo=entrata|uscita|versamento` e `?ricorrente=1` precompilano il form.
+- **Condiviso**: chi guarda è `creatore` o `membro` (`walletStore.mioRuolo`); le
+  quote sono salvate dal punto di vista del creatore e si girano in
+  `utils/conti.js` (`miaQuota`, `bilancio(…, io)`). Il conto tra voi conta tutti
+  i movimenti di sempre (`dashboard.conto`), non solo quelli del mese.
 - **Logica pura** (calcoli, date, formati) in `utils/`, senza import Vue, con
   test in `node --test`.
 
@@ -401,43 +490,52 @@ non ha effetto e non dà errori (era successo: lo ha scoperto il test e2e).
 
 ## Design system
 
-Dark mode only. I colori stanno **solo** in `frontend/src/assets/main.css`
-(`@theme`), che PrimeVue legge da `src/theme.js`. Nelle viste si usano le classi
-(`bg-card`, `text-testo2`, `text-errore-testo`...), mai hex. La tabella sotto
-usa i nomi Flutter (origine della palette); in Tailwind: `bg`→`fondo`,
-`input`→`campo`, `error`→`errore`, `errorText`→`errore-testo`,
-`textPrimary`→`testo`, `textSecondary`→`testo2`, `border`→`bordo`.
+Mockup e decisioni in `budgetApp/demoThomas/` (`progetto.md` §9 e §14).
+Antracite calda + **blocchi di colore pieno con testo nero**; un colore = un
+significato. Modalità **Notte, Giorno e Sistema**: la preferenza sta in
+`localStorage` (`budget.tema`) e sull'utente (`tema`); lo script in testa a
+`index.html` la applica prima del primo disegno, poi `src/tema.js`.
 
-I contrasti sono rapporti WCAG misurati su `card`; la soglia AA sotto i 18px è
-4.5:1. **Prima di cambiare un colore, ricalcolare**: diversi valori stanno
-appena sopra la soglia.
+I colori stanno **solo** in `frontend/src/assets/main.css` (`@theme static`; i
+valori Giorno in `:root[data-theme="light"]`), PrimeVue li legge da
+`src/theme.js` (sempre lo schema "dark" di Aura: cambiano le variabili, non lo
+schema), i grafici con `token("nome")`. Nelle viste solo classi, mai hex.
 
-| Token | Hex | Contrasto | Uso |
+| Token | Notte | Giorno | Uso |
 |---|---|---|---|
-| `bg` | `#0F1923` | — | sfondo schermate |
-| `card` | `#1A2535` | — | superficie card |
-| `input` | `#1E2D40` | — | campi e riempimenti |
-| `accent` | `#3B82F6` | 4.20:1 | brand, azioni, elementi interattivi. **Mai per i valori monetari** |
-| `positivo` | `#10B981` | 6.09:1 | rimanente sopra zero, risparmi, progressi in regola |
-| `error` | `#F43F5E` | 4.21:1 | sfondi, bordi, icone, SnackBar di errore |
-| `errorText` | `#FB7185` | 5.74:1 | **testo** in errore (la variante scura non passa AA) |
-| `avviso` | `#EAB308` | 9.25:1 | proiezione di sfondamento, dati parziali |
-| `textPrimary` | `#E8EFF7` | 13.32:1 | testo principale |
-| `textSecondary` | `#7A90A8` | 4.69:1 | etichette, testo secondario |
-| `border` | `0x24FFFFFF` | 1.72:1 | bordi card |
-| `categorie[]` | 7 colori | — | chip categoria, indicizzati per `documentId.hashCode` |
+| `fondo` | `#1b1a18` | `#f4f1ec` | fondo pagina |
+| `card` | `#262522` | `#fdfcfa` | pannelli |
+| `campo` | `#302e2a` | `#efebe4` | pillole, superfici interne, campi |
+| `testo` / `testo2` | `#efe6da` / `#a39d94` | `#1b1a18` / `#64605a` | testo |
+| `salvia` | `#c3cc8c` | = | **entrate** (blocco, testo nero sopra, 10,7:1) |
+| `arancio` | `#f5a574` | = | **uscite**, sforato, Elimina (9,1:1) |
+| `crema` | `#e8d8c9` | `#e5cfb8` | saldo, risparmio, azione principale (13,1:1) |
+| `ardesia` | `#4b607f` | = | informazione, testo `su-inchiostro` sopra (5,2:1) |
+| `fg-positivo` | `#c3cc8c` | `#5b6a22` | **testo** degli importi in entrata |
+| `fg-negativo` | `#eb827b` | `#b3423a` | **testo** degli importi in uscita |
+| `fg-avviso` / `fg-accento` | `#f5a574` / `#e8d8c9` | `#9e4e1a` / `#7d5f44` | errori / accenti |
+| `chart-1..6` | palette validata | = | grafico, il colore **segue la categoria** |
+| `av-*`, `persona-*` | toni chiari | = | avatar e salvadanai (il lilla è dell'altra persona) |
 
-Convenzioni ricorrenti:
-- Testata di schermata: eyebrow 12px `w600` `letterSpacing: 2` in `textSecondary`,
-  poi titolo 32px `bold` in `textPrimary`
-- Card: `borderRadius: 12` (liste) o `16-20` (form e blocchi), `border: AppColors.border`
-- Padding schermata: `EdgeInsets.fromLTRB(24, 32, 24, 32)`, liste `all(16)`
-- Gli importi si formattano con `euro()` e si colorano con `coloreImporto()`
-  (`utils/budget.js`; in Flutter `Euro.segnato()`/`Euro.colore()`): un negativo
-  porta **il segno**, non solo il rosso.
-  `accent` ed `error` hanno la stessa luminanza — distinguerli col solo colore
-  non funziona in scala di grigi né per un daltonico.
-- Niente hex nelle schermate: se manca un colore, si aggiunge un token
+Il testo d'accento ha token propri perché crema, salvia e arancio come testo
+sparirebbero sul fondo chiaro. Sui blocchi colorati le etichette restano nere
+piene (il nero attenuato scende sotto 4,5:1). **Prima di cambiare un colore,
+ricalcolare** i contrasti (la tabella di `progetto.md` §9/§14).
+
+Convenzioni:
+- Font Geist / Geist Mono, icone **Phosphor Bold** (`ph-bold ph-...`, niente
+  PrimeIcons), emoji Apple come immagini (`<Emoji e="🛒" />`, PNG servite in
+  locale da `/emoji`, vedi `vite.config.js`)
+- Testata: `.eyebrow` + `.display`; pannelli `.panel` (28px), blocchi `.blocco`
+  (**non** `.block`: collide con l'utility `block` di Tailwind), bottoni
+  `.pill-btn--cream|ink|ghost`, selettori `.seg`, campi `.campo`
+- Importi con `eur()` / `<Euro :v>` (`utils/formato.js`): "€1.388,00" coi
+  decimali attenuati, il negativo porta il segno "−", non solo il colore
+- Pillola di navigazione flottante (Home · Transazioni · Analisi ·
+  Impostazioni), scura anche di giorno (token `dock-*`); il salvadanaio è il
+  cerchio crema nell'header
+- Pagine verificate a 1280, 375 e 320 px: niente sbordamenti (`minmax(0,1fr)`,
+  `min-w-0`, `truncate` dove serve)
 
 ## Pattern comuni nel codice (Flutter, riferimento)
 
@@ -470,9 +568,10 @@ Quando si assiste:
 - Scrivere codice solo quando richiesto esplicitamente
 - Pragmatismo: *"shipped is better than perfect"*. Niente over-engineering,
   niente astrazioni speculative, niente scaffolding "per dopo".
-- **Multi-utente** (fase 5, chiusa): gli account li crea solo Vezzo dall'admin;
-  niente registrazione, recupero password, inviti o ruoli finché non li chiede.
-  Restano fuori ruoli complessi, inviti, budget condivisi, gamification e
-  analytics di retention, finché Vezzo non li chiede.
+- **Multi-utente**: gli account li crea solo Vezzo dall'admin; niente
+  registrazione né recupero password. Il portafoglio condiviso (una sola altra
+  persona, invito verso un utente esistente, senza email) c'è dal 2026-11-23.
+  Restano fuori ruoli complessi, gamification e analytics di retention, finché
+  Vezzo non li chiede.
 - Prima di consegnare una modifica al frontend: `npm run build` e `npm test`
   in `frontend/`.
