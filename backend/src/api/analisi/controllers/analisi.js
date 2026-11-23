@@ -146,7 +146,8 @@ module.exports = {
         filters: { wallet: { documentId: { $in: walletsUtente.map((w) => w.documentId) } } },
         populate: ['wallet'],
       });
-      const categorieWallet = categorie.filter((c) => c.wallet?.documentId === walletId);
+      // Sforamenti: solo le uscite del portafoglio scelto.
+      const categorieWallet = categorie.filter((c) => c.wallet?.documentId === walletId && c.Tipo === 'uscita');
 
       if (!categorie.length) {
         return ctx.badRequest('Nessuna categoria trovata');

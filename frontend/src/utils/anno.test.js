@@ -56,3 +56,22 @@ test("oltre la stima", () => {
   assert.equal(out.categorie[0].budgetStimato, 120);
   assert.equal(out.categorie[0].oltreStima, true);
 });
+
+test("le entrate non entrano nello speso", () => {
+  const r = calcolaAnno({
+    anno: 2026,
+    adesso: new Date(2026, 11, 31),
+    categorie: [
+      { documentId: "u", Nome: "Spesa", Budget_categoria: 100, Tipo: "uscita" },
+      { documentId: "e", Nome: "Stipendio", Budget_categoria: 2000, Tipo: "entrata" },
+    ],
+    righe: [
+      { data: "2026-03-01", importo: 50, categoriaId: "u", categoria: "Spesa", tipo: "uscita" },
+      { data: "2026-03-27", importo: 1800, categoriaId: "e", categoria: "Stipendio", tipo: "entrata" },
+    ],
+  });
+  assert.equal(r.speso, 50);
+  assert.equal(r.entrate, 1800);
+  assert.equal(r.entratePerMese[2], 1800);
+  assert.equal(r.categorie.length, 1);
+});

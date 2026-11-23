@@ -9,10 +9,11 @@ const siNo = (b) => (b ? "si" : "no");
 
 /** righe = forma di services/transazioniQuery.js. Date ISO, ordinabili. */
 export function generaCsv(righe) {
-  const intestazione = "data,importo,descrizione,categoria,budget_categoria,portafoglio,ricorrente,contanti";
+  const intestazione = "data,tipo,importo,descrizione,categoria,budget_categoria,portafoglio,ricorrente,contanti";
   const corpo = righe.map((r) =>
     [
       r.data,
+      r.tipo || "uscita",
       r.importo.toFixed(2),
       campo(r.descrizione),
       campo(r.categoria),

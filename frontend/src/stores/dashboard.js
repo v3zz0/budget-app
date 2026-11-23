@@ -24,8 +24,14 @@ export const useDashboardStore = defineStore("dashboard", {
   }),
 
   getters: {
-    totaleSpesi: (s) => s.categorie.reduce((t, c) => t + somma(c.transazionis), 0),
-    totaleBudget: (s) => s.categorie.reduce((t, c) => t + (c.Budget_categoria || 0), 0),
+    // Solo le uscite: un'entrata non è una spesa (e il suo budget è "previsto")
+    uscite: (s) => s.categorie.filter((c) => (c.Tipo || "uscita") === "uscita"),
+    totaleSpesi() {
+      return this.uscite.reduce((t, c) => t + somma(c.transazionis), 0);
+    },
+    totaleBudget() {
+      return this.uscite.reduce((t, c) => t + (c.Budget_categoria || 0), 0);
+    },
     totaleRimanente() {
       return this.totaleBudget - this.totaleSpesi;
     },

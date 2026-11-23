@@ -53,8 +53,9 @@ module.exports = () => ({
     const [ay, am] = mesi[mesi.length - 1].split('-').map(Number);
     const al = new Date(Date.UTC(ay, am, 0)).toISOString().slice(0, 10);
 
+    // Solo le uscite: i consigli parlano di budget di spesa (progetto.md §6).
     const categorie = await strapi.documents('api::categorie.categorie').findMany({
-      filters: { wallet: { documentId: walletDocumentId } },
+      filters: { wallet: { documentId: walletDocumentId }, Tipo: 'uscita' },
     });
     if (!categorie.length) return [];
 

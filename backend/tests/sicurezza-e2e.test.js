@@ -14,6 +14,8 @@
 //   7. le chiavi AI stanno cifrate nel database (anche le vecchie, in chiaro)
 //   8. eliminare un utente elimina i suoi dati (da Documents API, service e db)
 //   9. la pulizia degli orfani (anteprima, eliminazione, wallet senza utente)
+//  10. entrate: Tipo di default, normalizzazione dei vecchi NULL, speso e
+//      consigli contano solo le uscite
 //
 // Richiede un driver SQLite che NON è una dipendenza del progetto (in
 // produzione si usa MySQL e non serve compilarlo):
@@ -78,7 +80,7 @@ async function main() {
   try {
     assert.strictEqual(app.db.config.connection.client, 'sqlite', 'ABORT: il database non è sqlite');
     await prova(app, porta);
-    console.log('OK: sicurezza multi-utente (permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
+    console.log('OK: sicurezza multi-utente (entrate, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
   } finally {
     await app.destroy();
     fs.rmSync(appDir, { recursive: true, force: true });
@@ -303,6 +305,31 @@ async function prova(app, porta) {
   await D(W).delete({ documentId: wp.w.documentId });
   assert.deepStrictEqual(await totali(), base9, 'dopo la pulizia i dati tornano a quelli di partenza');
   assert.deepStrictEqual(await orfani(), nessunOrfano);
+
+  // ── 10. Entrate: lo speso conta solo le uscite ─────────────────────────────
+  {
+    const { spesoDelPeriodo } = require(path.join(radice, 'src/speso'));
+    const motore = require(path.join(radice, 'src/api/consiglio/services/motore-consigli'))();
+    const we = await D(W).create({ data: { Nome: 'WEntrate', Budget: 1000, users_permissions_user: ada.documentId } });
+    const spesa = await D(C).create({ data: { Nome: 'Spesa', Budget_categoria: 100, wallet: we.documentId } });
+    assert.strictEqual(spesa.Tipo, 'uscita', 'una categoria nuova senza Tipo è un\'uscita');
+    const stip = await D(C).create({ data: { Nome: 'Stipendio', Budget_categoria: 100, Tipo: 'entrata', wallet: we.documentId } });
+    await D(T).create({ data: { Descrizione: 'pane', Importo: 30, Data: '2026-11-03', categorie: spesa.documentId } });
+    await D(T).create({ data: { Descrizione: 'stipendio', Importo: 2000, Data: '2026-11-27', categorie: stip.documentId } });
+    assert.strictEqual(await spesoDelPeriodo(app, we.documentId, '2026-11-01', '2026-11-30'), 30, 'l\'entrata non è una spesa');
+    // Consigli: 6 mesi di "stipendio" oltre il budget non devono proporre di alzarlo.
+    for (const m of ['05', '06', '07', '08', '09', '10']) {
+      await D(T).create({ data: { Descrizione: 'stip', Importo: 2000, Data: `2026-${m}-27`, categorie: stip.documentId } });
+    }
+    const proposte = await motore.calcola(we.documentId, new Date(Date.UTC(2026, 10, 28)));
+    assert.ok(!proposte.some((p) => p.categoria.documentId === stip.documentId), 'niente consigli sulle entrate');
+    // Righe di prima del campo: NULL nel DB, il bootstrap le porta a "uscita".
+    const colTipo = app.db.metadata.get(C).attributes.Tipo.columnName;
+    await app.db.connection('categories').where({ id: spesa.id }).update({ [colTipo]: null });
+    await app.config.get('server') && (await require(path.join(radice, 'src/index')).bootstrap({ strapi: app }));
+    assert.strictEqual((await q(C).findOne({ where: { id: spesa.id } })).Tipo, 'uscita', 'il bootstrap normalizza i NULL');
+    await D(W).delete({ documentId: we.documentId });
+  }
 
   // ── 6. Accesso chiuso: gli account li crea solo l'amministratore ───────────
   r = await http('POST', '/api/auth/local/register', null, { username: 'intruso', email: 'intruso@example.com', password: 'Prova1234!' });

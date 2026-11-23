@@ -30,12 +30,19 @@ export function calcolaAnno({ anno, righe, categorie, adesso }) {
   const perCategoria = new Map();
   const nomi = new Map();
   const totaliMese = Array(12).fill(0);
+  const entrateMese = Array(12).fill(0);
 
   for (const r of righe) {
     // Fuori anno non dovrebbe arrivare nulla; se un filtro cambiasse,
     // finirebbe nel totale senza che ce ne accorgiamo.
     if (Number(r.data.slice(0, 4)) !== anno) continue;
     const m = Number(r.data.slice(5, 7)) - 1;
+    // Lo speso è solo delle uscite; le entrate hanno la loro serie.
+    if (r.tipo === "entrata") {
+      entrateMese[m] += r.importo;
+      continue;
+    }
+    if (r.tipo && r.tipo !== "uscita") continue; // versamenti e rimborsi del condiviso
     if (!perCategoria.has(r.categoriaId)) perCategoria.set(r.categoriaId, Array(12).fill(0));
     perCategoria.get(r.categoriaId)[m] += r.importo;
     totaliMese[m] += r.importo;
@@ -53,7 +60,7 @@ export function calcolaAnno({ anno, righe, categorie, adesso }) {
     };
   };
 
-  const righeCategoria = categorie.map((c) =>
+  const righeCategoria = categorie.filter((c) => (c.Tipo || "uscita") === "uscita").map((c) =>
     voce(c.documentId, c.Nome, c.icona || "", c.Budget_categoria || 0,
       perCategoria.get(c.documentId) ?? Array(12).fill(0)),
   );
@@ -72,6 +79,8 @@ export function calcolaAnno({ anno, righe, categorie, adesso }) {
     speso,
     budgetStimato: somma(righeCategoria.map((c) => c.budgetStimato)),
     perMese: totaliMese,
+    entratePerMese: entrateMese,
+    entrate: somma(entrateMese),
     mesiConsiderati: mesi,
     vuoto: speso === 0,
   };

@@ -31,6 +31,21 @@
     },
     "icona": {
       "type": "string"
+    },
+    "Tipo": {
+      "type": "enumeration",
+      "enum": [
+        "uscita",
+        "entrata",
+        "versamento",
+        "rimborso"
+      ],
+      "default": "uscita",
+      "required": true
+    },
+    "Nascosta": {
+      "type": "boolean",
+      "default": false
     }
   }
 }

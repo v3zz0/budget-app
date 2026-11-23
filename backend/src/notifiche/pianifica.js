@@ -27,6 +27,7 @@ async function sforamenti(strapi, utente, data) {
   const categorie = await strapi.db.query(CATEGORIE).findMany({
     where: {
       Budget_categoria: { $gt: 0 },
+      Tipo: 'uscita', // per un'entrata il budget è "entrata prevista", non un tetto
       wallet: { $and: [
         { users_permissions_user: utente },
         { $or: [{ escludiDaStatistiche: false }, { escludiDaStatistiche: null }] },

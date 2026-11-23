@@ -9,13 +9,13 @@ const base = {
 
 test("riga base e intestazione", () => {
   const [intest, riga] = generaCsv([base]).split("\n");
-  assert.equal(intest, "data,importo,descrizione,categoria,budget_categoria,portafoglio,ricorrente,contanti");
-  assert.equal(riga, '2026-08-05,12.50,"Pizza","Cibo",200.00,"Casa",no,si');
+  assert.equal(intest, "data,tipo,importo,descrizione,categoria,budget_categoria,portafoglio,ricorrente,contanti");
+  assert.equal(riga, '2026-08-05,uscita,12.50,"Pizza","Cibo",200.00,"Casa",no,si');
 });
 
 test("escaping: virgole, virgolette e a capo non rompono le colonne", () => {
   const csv = generaCsv([{ ...base, descrizione: 'Ciao, "mondo"\nsecondo', categoria: "A,B" }]);
-  assert.equal(csv.split("\n")[1], '2026-08-05,12.50,"Ciao, ""mondo"" secondo","A,B",200.00,"Casa",no,si');
+  assert.equal(csv.split("\n")[1], '2026-08-05,uscita,12.50,"Ciao, ""mondo"" secondo","A,B",200.00,"Casa",no,si');
 });
 
 test("lista vuota: solo l'intestazione", () => {

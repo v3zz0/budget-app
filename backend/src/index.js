@@ -4,6 +4,7 @@ const cascata = require("./cascata");
 const permessi = require("./permessi");
 const chiaviAi = require("./chiavi-ai");
 const notifiche = require("./notifiche/pianifica");
+const { spesoDelPeriodo } = require("./speso");
 
 // Il testo del consiglio lo scrive l'LLM, ma i numeri glieli passiamo noi già
 // calcolati: il modello non deve MAI decidere un importo. Se non risponde o non
@@ -40,27 +41,6 @@ async function testoConsiglio(llm, p, strapi) {
 // tutte le chiavi mese di un giorno e rompere il salvadanaio in silenzio.
 function primoDelMese(anno, mese) {
   return `${anno}-${String(mese).padStart(2, "0")}-01`;
-}
-
-// Quanto è stato speso davvero in un wallet, in un intervallo di date.
-// Serve a chiudere il mese: `speso` è l'unico campo del salvadanaio che
-// nessuno riempiva mai, e restando a 0 rendeva muta la card di dettaglio.
-async function spesoDelPeriodo(strapi, walletDocumentId, dal, al) {
-  const categorie = await strapi.documents("api::categorie.categorie").findMany({
-    filters: { wallet: { documentId: walletDocumentId } },
-  });
-  if (!categorie.length) return 0;
-
-  const transazioni = await strapi.documents("api::transazioni.transazioni").findMany({
-    filters: {
-      categorie: { documentId: { $in: categorie.map((c) => c.documentId) } },
-      Data: { $gte: dal, $lte: al },
-    },
-    limit: -1,
-  });
-
-  const totale = transazioni.reduce((s, t) => s + Number(t.Importo || 0), 0);
-  return Number(totale.toFixed(2));
 }
 
 module.exports = {
@@ -314,6 +294,14 @@ module.exports = {
       await permessi.seedPermessi(strapi);
     } catch (e) {
       strapi.log.error(`Permessi: seed non riuscito (${e.message})`);
+    }
+    // Categorie di prima del campo Tipo: sono tutte uscite. Senza questo, le
+    // righe vecchie restano a NULL e i filtri `Tipo = uscita` le perdono.
+    try {
+      await strapi.db.query("api::categorie.categorie").updateMany({ where: { Tipo: null }, data: { Tipo: "uscita" } });
+      await strapi.db.query("api::categorie.categorie").updateMany({ where: { Nascosta: null }, data: { Nascosta: false } });
+    } catch (e) {
+      strapi.log.error(`Categorie: Tipo di default non applicato (${e.message})`);
     }
     // Cifra le chiavi AI rimaste in chiaro dalle versioni precedenti.
     try {

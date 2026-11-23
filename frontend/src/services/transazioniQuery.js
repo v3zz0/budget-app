@@ -10,6 +10,8 @@ const riga = (j) => ({
   descrizione: j.Descrizione ?? "",
   categoriaId: j.categorie?.documentId ?? "",
   categoria: j.categorie?.Nome ?? "",
+  // senza Tipo = categoria di prima del campo: è un'uscita
+  tipo: j.categorie?.Tipo || "uscita",
   budgetCategoria: Number(j.categorie?.Budget_categoria) || 0,
   walletId: j.categorie?.wallet?.documentId ?? "",
   portafoglio: j.categorie?.wallet?.Nome ?? "",
@@ -34,7 +36,7 @@ export async function caricaRighe({ dal, al, walletId } = {}) {
   const { righe, totale } = await elencaConTotale("/api/transazionis", {
     filters,
     populate: {
-      categorie: { fields: ["Nome", "Budget_categoria"], populate: { wallet: { fields: ["Nome"] } } },
+      categorie: { fields: ["Nome", "Budget_categoria", "Tipo"], populate: { wallet: { fields: ["Nome"] } } },
     },
     sort: ["Data:asc", "id:asc"],
   });
