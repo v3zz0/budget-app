@@ -1,0 +1,30 @@
+{
+  "kind": "collectionType",
+  "collectionName": "budget_notifica_dispositivi",
+  "info": {
+    "singularName": "notifica-dispositivo",
+    "pluralName": "notifica-dispositivi",
+    "displayName": "Dispositivi notifiche"
+  },
+  "options": { "draftAndPublish": false },
+  "pluginOptions": {
+    "content-manager": { "visible": false },
+    "content-type-builder": { "visible": false }
+  },
+  "attributes": {
+    "utente": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user",
+      "private": true
+    },
+    "impronta": {
+      "type": "string", "required": true, "unique": true, "private": true,
+      "column": { "unique": true, "notNullable": true }
+    },
+    "idBrowser": { "type": "string", "required": true, "private": true },
+    "iscrizione": { "type": "json", "required": true, "private": true },
+    "chiavePubblica": { "type": "string", "required": true, "private": true },
+    "ultimoTest": { "type": "datetime", "private": true }
+  }
+}

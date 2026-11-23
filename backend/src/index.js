@@ -3,6 +3,7 @@
 const cascata = require("./cascata");
 const permessi = require("./permessi");
 const chiaviAi = require("./chiavi-ai");
+const notifiche = require("./notifiche/pianifica");
 
 // Il testo del consiglio lo scrive l'LLM, ma i numeri glieli passiamo noi già
 // calcolati: il modello non deve MAI decidere un importo. Se non risponde o non
@@ -68,6 +69,7 @@ module.exports = {
     cascata.registra(strapi);
     // Le chiavi AI si salvano cifrate, da REST come dall'admin.
     chiaviAi.registra(strapi);
+    notifiche.registraCron(strapi);
 
     strapi.cron.add({
       // A fine mese (ultimo giorno alle 23) si fanno due cose:

@@ -26,6 +26,7 @@ const CATEGORIA = 'api::categorie.categorie';
 const TRANSAZIONE = 'api::transazioni.transazioni';
 const SALVADANAIO = 'api::salvadanaio.salvadanaio';
 const CONSIGLIO = 'api::consiglio.consiglio';
+const DISPOSITIVO = 'api::notifica-dispositivo.notifica-dispositivo';
 
 // Righe per giro: tiene corte le query anche con migliaia di transazioni
 // (e sotto il limite di variabili di SQLite).
@@ -63,12 +64,14 @@ const FIGLI = { [WALLET]: eliminaFigliDiWallet, [CATEGORIA]: (strapi, id) => eli
 // dal Documents API così scatta la cascata di sopra. Va fatto PRIMA della delete
 // dell'utente (beforeDelete): dopo, il legame wallet → utente non c'è più e i
 // wallet non si potrebbero nemmeno ritrovare.
-async function eliminaWalletDegliUtenti(strapi, where) {
+async function eliminaDatiDegliUtenti(strapi, where) {
   const utenti = await strapi.db.query(USER).findMany({ select: ['id'], where });
   if (!utenti.length) return;
+  const ids = utenti.map((u) => u.id);
+  await eliminaDove(strapi, DISPOSITIVO, { utente: { id: { $in: ids } } });
   const wallets = await strapi.db.query(WALLET).findMany({
     select: ['documentId'],
-    where: { users_permissions_user: { id: { $in: utenti.map((u) => u.id) } } },
+    where: { users_permissions_user: { id: { $in: ids } } },
   });
   for (const w of wallets) await strapi.documents(WALLET).delete({ documentId: w.documentId });
 }
@@ -91,8 +94,8 @@ function registra(strapi) {
   // Tutte le strade che cancellano un utente (admin, API, codice) passano da qui.
   strapi.db.lifecycles.subscribe({
     models: [USER],
-    beforeDelete: (event) => eliminaWalletDegliUtenti(strapi, event.params.where),
-    beforeDeleteMany: (event) => eliminaWalletDegliUtenti(strapi, event.params.where),
+    beforeDelete: (event) => eliminaDatiDegliUtenti(strapi, event.params.where),
+    beforeDeleteMany: (event) => eliminaDatiDegliUtenti(strapi, event.params.where),
   });
 }
 

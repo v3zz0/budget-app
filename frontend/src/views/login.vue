@@ -1,12 +1,14 @@
 <script setup>
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
 import { zodResolver } from "@primevue/forms/resolvers/zod";
 import { z } from "zod";
 import { useAuthStore } from "@/stores/auth.js";
 import { erroreLeggibile } from "@/services/api.js";
+import { ritornoNotifica } from "@/utils/ritorno-notifica.js";
 
 const router = useRouter();
+const route = useRoute();
 const toast = useToast();
 const auth = useAuthStore();
 
@@ -23,7 +25,7 @@ async function entra({ valid, values }) {
   if (!valid) return errore("Riempi tutti i campi");
   try {
     await auth.login({ identifier: values.email, password: values.password });
-    router.push("/");
+    router.replace(ritornoNotifica(route.query.ritorno));
   } catch (e) {
     // Strapi risponde 400 a credenziali sbagliate
     errore(e.response?.status === 400 ? "Email o password sbagliata" : erroreLeggibile(e));

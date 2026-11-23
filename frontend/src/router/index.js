@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "@/stores/auth.js";
+import { accessoRichiesto } from "@/utils/ritorno-notifica.js";
 import Login from "../views/login.vue";
 import Home from "../views/home.vue";
 import Transazioni from "../views/transazioni.vue";
@@ -14,6 +15,7 @@ import ImpostazioniProfilo from "../views/impostazioni/profilo.vue";
 import ImpostazioniPortafogli from "../views/impostazioni/portafogli.vue";
 import ImpostazioniCategorie from "../views/impostazioni/categorie.vue";
 import ImpostazioniAi from "../views/impostazioni/ai.vue";
+import ImpostazioniNotifiche from "../views/impostazioni/notifiche.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -32,6 +34,7 @@ export const router = createRouter({
     { path: "/impostazioni/portafogli", name: "portafogli", component: ImpostazioniPortafogli },
     { path: "/impostazioni/categorie", name: "categorie", component: ImpostazioniCategorie },
     { path: "/impostazioni/ai", name: "ai", component: ImpostazioniAi },
+    { path: "/impostazioni/notifiche", name: "notifiche", component: ImpostazioniNotifiche },
     { path: "/ricorrenti", name: "ricorrenti", component: Ricorrenti },
     { path: "/export", name: "export", component: Export },
     { path: "/:catchAll(.*)", redirect: "/" },
@@ -40,6 +43,6 @@ export const router = createRouter({
 
 router.beforeEach((to) => {
   const loggato = useAuthStore().isLoggedIn;
-  if (!to.meta.pubblica && !loggato) return { name: "Login" };
+  if (!to.meta.pubblica && !loggato) return accessoRichiesto(to);
   if (to.name === "Login" && loggato) return { name: "home" };
 });

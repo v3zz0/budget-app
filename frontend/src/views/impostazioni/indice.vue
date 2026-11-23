@@ -22,6 +22,7 @@ const voci = computed(() => [
   { icona: "pi-tags", titolo: "Categorie di spesa", sotto: "Aggiungi, rinomina o elimina categorie", to: "/impostazioni/categorie" },
   { icona: "pi-download", titolo: "Esporta dati", sotto: "Tutte le transazioni in CSV, per anno o per mese", to: "/export" },
   { icona: "pi-replay", titolo: "Transazioni ricorrenti", sotto: "Cosa viene registrato in automatico ogni mese", to: "/ricorrenti" },
+  { icona: "pi-bell", titolo: "Notifiche", sotto: "Promemoria di scadenza e avvisi sul budget", to: "/impostazioni/notifiche" },
   { icona: "pi-sparkles", titolo: "Analisi AI", sotto: "Quale modello analizza gli estratti conto", to: "/impostazioni/ai" },
 ]);
 </script>

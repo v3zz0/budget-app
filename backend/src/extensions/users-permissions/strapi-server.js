@@ -2,8 +2,8 @@
 
 // Restringe gli endpoint /api/users/* al solo utente che chiama e chiude
 // registrazione e recupero password (vedi in fondo). Utenti: update, find,
-// findOne, count, create, destroy. L'app modifica il profilo con `PUT /api/users/:id` (nome, email, orario delle
-// notifiche, impostazioni AI), e per farlo il permesso `update` dev'essere
+// findOne, count, create, destroy. L'app modifica il profilo con `PUT /api/users/:id`
+// (nome, email, orario notifiche Flutter, impostazioni AI) e per farlo il permesso `update` dev'essere
 // acceso sul ruolo Authenticated.
 //
 // Il problema è che quel permesso, così com'è in users-permissions, NON è
@@ -29,7 +29,7 @@ module.exports = (plugin) => {
     // Ruolo, blocco e conferma non si toccano dall'app: sono la serratura, e
     // non ha senso lasciarne la chiave dentro. Restano modificabili solo dal
     // pannello di amministrazione.
-    for (const campo of ['role', 'blocked', 'confirmed', 'provider']) {
+    for (const campo of ['role', 'blocked', 'confirmed', 'provider', 'orarioNotificheWeb', 'anticipoNotifiche', 'avvisiBudget']) {
       delete ctx.request.body[campo];
     }
 

@@ -1,0 +1,21 @@
+{
+  "kind": "collectionType",
+  "collectionName": "budget_notifica_consegne",
+  "info": {
+    "singularName": "notifica-consegna",
+    "pluralName": "notifica-consegne",
+    "displayName": "Consegne notifiche"
+  },
+  "options": { "draftAndPublish": false },
+  "pluginOptions": {
+    "content-manager": { "visible": false },
+    "content-type-builder": { "visible": false }
+  },
+  "attributes": {
+    "chiave": {
+      "type": "string", "required": true, "unique": true, "private": true,
+      "column": { "unique": true, "notNullable": true }
+    },
+    "scadeIl": { "type": "date", "required": true, "private": true }
+  }
+}

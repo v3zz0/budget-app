@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { useConsigliStore } from "@/stores/consigli.js";
@@ -12,6 +12,7 @@ import { erroreLeggibile } from "@/services/api.js";
 import { coloreImporto, dataIt, euro, nomeMese } from "@/utils/budget.js";
 
 const router = useRouter();
+const route = useRoute();
 const confirm = useConfirm();
 const toast = useToast();
 const dashboard = useDashboardStore();
@@ -43,6 +44,19 @@ onMounted(() => consigli.carica());
 // ricarica dal server a ogni cambio (cambiaMese), non si filtra sul client.
 watch(() => walletStore.walletId, (id) => id && dashboard.carica(id), { immediate: true });
 
+watch([() => route.query, () => walletStore.caricati], ([query, caricati]) => {
+  if (!caricati || typeof query.portafoglio !== "string" || typeof query.categoria !== "string" ||
+      typeof query.mese !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(query.mese)) return;
+  const wallet = walletStore.wallets.find((w) => w.documentId === query.portafoglio);
+  if (!wallet) return;
+  const [anno, mese] = query.mese.split("-").map(Number);
+  const meseCambiato = dashboard.mese.anno !== anno || dashboard.mese.mese !== mese;
+  dashboard.mese = { anno, mese };
+  espanse.add(query.categoria);
+  if (walletStore.walletId !== wallet.documentId) walletStore.setSelectedWallet(wallet);
+  else if (meseCambiato) dashboard.carica(wallet.documentId);
+}, { immediate: true });
+
 const righe = computed(() =>
   dashboard.categorie.map((c) => {
     const budget = c.Budget_categoria || 0;
@@ -60,6 +74,10 @@ const righe = computed(() =>
     };
   }),
 );
+
+watch(() => righe.value.find((c) => c.documentId === route.query.categoria)?.documentId, (id) => {
+  if (id) document.getElementById(`categoria-${id}`)?.scrollIntoView({ block: "nearest" });
+}, { flush: "post" });
 
 const toggle = (id) => (espanse.has(id) ? espanse.delete(id) : espanse.add(id));
 
@@ -197,7 +215,7 @@ function elimina(t) {
       </div>
 
       <!-- Categorie espandibili -->
-      <div v-for="c in righe" :key="c.documentId" class="rounded-xl border border-bordo bg-card">
+      <div v-for="c in righe" :id="`categoria-${c.documentId}`" :key="c.documentId" class="rounded-xl border border-bordo bg-card">
         <button
           type="button"
           class="w-full rounded-xl p-4 text-left"

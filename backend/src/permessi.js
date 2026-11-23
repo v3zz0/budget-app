@@ -26,6 +26,7 @@ const PERMESSI = [
   ...su('api::consiglio.consiglio', ['find', 'findOne', 'applica', 'segna']),
   ...su('api::analisi.analisi', ['analizza', 'testAi']),
   ...su('api::scontrino.scontrino', ['leggi']),
+  ...su('api::notifiche.notifiche', ['stato', 'salva', 'attiva', 'disattiva', 'prova']),
   // `user.find` sembra strano ma serve: i controller owner-aware filtrano per
   // `users_permissions_user` e Strapi 5 valida quel filtro contro i permessi del
   // ruolo (senza: "Invalid key users_permissions_user"). Non espone nulla: il

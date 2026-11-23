@@ -10,6 +10,7 @@ import Ripple from "primevue/ripple";
 
 import App from "./App.vue";
 import { router } from "./router/index.js";
+import { accessoRichiesto } from "./utils/ritorno-notifica.js";
 import { budgetTheme } from "./theme.js";
 import { impostaSessioneScaduta } from "./services/api.js";
 import { useAuthStore } from "./stores/auth.js";
@@ -76,7 +77,7 @@ Object.entries({
 // 401 dal server: chiude la sessione e porta al login.
 impostaSessioneScaduta(() => {
   useAuthStore().logout();
-  router.push("/login");
+  if (router.currentRoute.value.name !== "Login") router.push(accessoRichiesto(router.currentRoute.value));
 });
 
 app.mount("#app");

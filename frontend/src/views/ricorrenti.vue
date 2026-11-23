@@ -1,15 +1,16 @@
 <script setup>
 import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { useWalletStore } from "@/stores/wallet.js";
-import { eliminaTransazione, elencaRicorrenti } from "@/services/transazioni.js";
+import { eliminaTransazione, elencaRicorrenti, trovaTransazione } from "@/services/transazioni.js";
 import { erroreLeggibile } from "@/services/api.js";
-import { euro } from "@/utils/budget.js";
+import { dataIt, euro } from "@/utils/budget.js";
 import { prossimaScadenza, quando } from "@/utils/ricorrenza.js";
 
 const router = useRouter();
+const route = useRoute();
 const confirm = useConfirm();
 const toast = useToast();
 const walletStore = useWalletStore();
@@ -17,6 +18,35 @@ const walletStore = useWalletStore();
 const lista = ref([]);
 const loading = ref(false);
 const errore = ref(null);
+const dettaglio = ref(null);
+const statoScadenza = ref("");
+const giornoAvviso = computed(() => {
+  const giorno = route.query.giorno;
+  return typeof giorno === "string" && /^\d{4}-\d{2}-\d{2}$/.test(giorno) ? giorno : "";
+});
+
+watch(() => route.query.scadenza, async (id, _, onCleanup) => {
+  dettaglio.value = null;
+  statoScadenza.value = "";
+  if (typeof id !== "string" || !/^[a-z0-9]{24}$/.test(id)) return;
+  let corrente = true;
+  onCleanup(() => { corrente = false; });
+  statoScadenza.value = "Caricamento della scadenza…";
+  try {
+    const voce = await trovaTransazione(id);
+    if (!corrente) return;
+    if (voce?.TransazioneRicorrente) {
+      dettaglio.value = voce;
+      statoScadenza.value = "";
+    } else {
+      statoScadenza.value = "Questa scadenza non è più disponibile.";
+    }
+  } catch (e) {
+    if (corrente) statoScadenza.value = e.response?.status === 404
+      ? "Questa scadenza non è più disponibile."
+      : erroreLeggibile(e);
+  }
+}, { immediate: true });
 
 // Le più vicine in cima
 const voci = computed(() =>
@@ -72,6 +102,18 @@ function elimina(t) {
       <p class="text-xs font-semibold uppercase tracking-[0.2em] text-testo2">Ogni mese</p>
       <h1 class="text-3xl font-bold text-testo">Ricorrenti</h1>
     </div>
+
+    <section v-if="dettaglio || statoScadenza" class="flex flex-col gap-2 rounded-xl border border-accent/40 bg-card p-5">
+      <h2 class="font-semibold text-testo">Scadenza del promemoria</h2>
+      <p v-if="statoScadenza" role="status" class="text-sm text-testo2">{{ statoScadenza }}</p>
+      <template v-else>
+        <p class="text-testo">{{ dettaglio.Descrizione || dettaglio.categorie?.Nome || "Transazione ricorrente" }}</p>
+        <p class="text-sm text-testo2">
+          <span v-if="giornoAvviso">{{ dataIt(giornoAvviso) }} · </span>{{ euro(dettaglio.Importo, 2) }}
+        </p>
+        <router-link :to="`/transazioni/${dettaglio.documentId}`" class="mt-1 self-start font-semibold text-accent">Apri transazione</router-link>
+      </template>
+    </section>
 
     <div v-if="errore" class="rounded-xl border border-errore/40 bg-errore/15 p-4 text-errore-testo">{{ errore }}</div>
 

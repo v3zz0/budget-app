@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { api } from "@/services/api.js";
+import { disattivaNotifiche } from "@/services/notifiche.js";
 import { useWalletStore } from "./wallet.js";
 import { useDashboardStore } from "./dashboard.js";
 import { useConsigliStore } from "./consigli.js";
@@ -43,6 +44,7 @@ export const useAuthStore = defineStore("auth", {
     },
 
     logout() {
+      if (this.token) disattivaNotifiche(this.token).catch(() => {});
       this.token = "";
       this.userInfo = {};
       localStorage.removeItem("token");

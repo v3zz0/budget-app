@@ -69,6 +69,21 @@
     "orarioNotifiche": {
       "type": "time"
     },
+    "orarioNotificheWeb": {
+      "type": "time",
+      "private": true
+    },
+    "anticipoNotifiche": {
+      "type": "integer",
+      "min": 0,
+      "max": 1,
+      "private": true
+    },
+    "avvisiBudget": {
+      "type": "boolean",
+      "default": false,
+      "private": true
+    },
     "aiMotore": {
       "type": "enumeration",
       "enum": ["ollama", "openrouter", "llamacpp"],
