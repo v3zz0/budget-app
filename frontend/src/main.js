@@ -1,5 +1,8 @@
 import "./assets/main.css";
 import "primeicons/primeicons.css";
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
+import "@phosphor-icons/web/bold";
 
 import { createApp } from "vue";
 import { createPinia } from "pinia";
@@ -15,6 +18,9 @@ import { budgetTheme } from "./theme.js";
 import { impostaSessioneScaduta } from "./services/api.js";
 import { useAuthStore } from "./stores/auth.js";
 import Indietro from "./components/Indietro.vue";
+import Emoji from "./components/Emoji.vue";
+import Euro from "./components/Euro.vue";
+import { avviaTema } from "./tema.js";
 
 // Componenti PrimeVue registrati globalmente (le viste non li importano)
 import Button from "primevue/button";
@@ -45,7 +51,7 @@ app.use(PrimeVue, {
   ripple: true,
   theme: {
     preset: budgetTheme,
-    options: { darkModeSelector: ".app-dark" }, // <html class="app-dark">
+    options: { darkModeSelector: "html:root" }, // sempre: vedi theme.js
   },
   locale: {
     accept: "Accetta",
@@ -67,6 +73,9 @@ app.use(ToastService);
 app.use(ConfirmationService);
 app.directive("ripple", Ripple);
 app.component("Indietro", Indietro);
+app.component("Emoji", Emoji);
+app.component("Euro", Euro);
+avviaTema();
 
 Object.entries({
   Button, Form, IconField, InputIcon, InputText, InputNumber, Toast, ConfirmDialog,

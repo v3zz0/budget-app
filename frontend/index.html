@@ -1,13 +1,24 @@
 <!doctype html>
-<html lang="it" class="app-dark">
+<html lang="it">
   <head>
     <meta charset="UTF-8" />
+    <!-- Tema prima del primo disegno: niente lampo di colore al caricamento.
+         Stessa regola di src/tema.js (chiave "budget.tema": sistema|giorno|notte). -->
+    <script>
+      (function () {
+        var t = "sistema";
+        try { t = localStorage.getItem("budget.tema") || "sistema"; } catch (e) {}
+        var chiaro = t === "giorno" || (t === "sistema" && matchMedia("(prefers-color-scheme: light)").matches);
+        document.documentElement.dataset.theme = chiaro ? "light" : "dark";
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0F1923" />
-    <title>budget-app</title>
+    <meta name="theme-color" content="#1b1a18" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f4f1ec" media="(prefers-color-scheme: light)" />
+    <title>Budget</title>
   </head>
   <body>
     <div id="app"></div>

@@ -1,5 +1,7 @@
 import { defineStore } from "pinia";
 import { api } from "@/services/api.js";
+import { persona } from "@/utils/persone.js";
+import { useAuthStore } from "./auth.js";
 
 const CHIAVE = "walletId";
 
@@ -14,6 +16,14 @@ export const useWalletStore = defineStore("wallet", {
 
   getters: {
     walletId: (s) => s.selectedWallet?.documentId || null,
+    /** Io, come persona (nome visualizzato, foto, colore). */
+    io: () => persona(useAuthStore().userInfo),
+    /** L'altra persona di un portafoglio condiviso, o null. Il lilla è suo. */
+    partnerDi: () => (w) => {
+      const mioId = useAuthStore().userInfo?.id;
+      const altro = [w?.creatoDa, ...(w?.membri || [])].find((u) => u && u.id !== mioId);
+      return w?.condiviso && altro ? persona(altro, "lilla") : null;
+    },
   },
 
   actions: {

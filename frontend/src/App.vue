@@ -6,11 +6,11 @@ const auth = useAuthStore();
 </script>
 
 <template>
-  <Toast position="bottom-center" :pt="{ root: { style: 'width: 90vw; max-width: 25rem' } }" />
+  <Toast position="bottom-center" :pt="{ root: { style: 'width: 90vw; max-width: 25rem; bottom: 96px' } }" />
   <ConfirmDialog />
   <Wheader v-if="auth.isLoggedIn && $route.name !== 'Login'" />
-  <!-- pb-28: spazio per la bottom nav su mobile -->
-  <main class="mx-auto w-full max-w-5xl pb-28 md:pb-10">
+  <!-- pb-40: spazio per la pillola di navigazione flottante -->
+  <main class="mx-auto w-full max-w-[1200px] px-4 pt-8 pb-36 sm:px-6 sm:pt-12 sm:pb-40">
     <router-view />
   </main>
 </template>

@@ -1,58 +1,251 @@
 @import "tailwindcss";
 
-/* dark-only: `dark:` vale sempre (html ha class="app-dark", vedi index.html) */
-@custom-variant dark (&:where(.app-dark, .app-dark *));
-
 /*
- * Palette dell'app. Dark mode only. I colori stanno SOLO qui: PrimeVue li
- * legge da src/theme.js, le viste usano le classi (bg-card, text-testo2...).
+ * Palette dell'app (mockup demoThomas, progetto.md §9 e §14).
+ * Antracite calda + blocchi pieni: un colore = un significato.
+ *   salvia -> entrate   arancio -> uscite   crema -> saldo/risparmio/azione
+ *   ardesia -> informazione
+ * Modalità Notte (default dei token qui sotto) e Giorno
+ * (:root[data-theme="light"]). Il tema lo applica index.html prima del primo
+ * disegno, poi src/tema.js.
+ *
+ * I colori stanno SOLO qui: PrimeVue li legge da src/theme.js, i grafici da
+ * utils/tokens.js, le viste usano le classi (bg-card, text-testo2...).
  * Mai hex nelle viste: se manca un colore, si aggiunge un token.
  *
- * Contrasti WCAG misurati su `card`; soglia AA sotto i 18px = 4.5:1.
- * PRIMA di cambiare un valore, ricalcolare: diversi stanno appena sopra.
+ * Contrasti (WCAG, misurati nel mockup, soglia AA 4.5:1 sotto i 18px):
+ *   testo nero #161513 su crema 13.1, salvia 10.7, arancio 9.1
+ *   crema su ardesia 5.2, crema su antracite 12.4
+ *   giorno: fg-positivo 5.8/5.0, fg-negativo 5.5/4.7, fg-avviso e fg-accento > 4.5
+ * Sui blocchi colorati le etichette restano nere piene: il nero attenuato
+ * scende sotto 4.5 su arancio e salvia. PRIMA di cambiare un valore, ricalcolare.
  */
 /* static: Tailwind emette di default solo le variabili usate da una classe, ma
-   qui le legge anche PrimeVue (theme.js) e i grafici (utils/tokens.js). */
+   qui le leggono anche PrimeVue (theme.js) e i grafici (utils/tokens.js). */
 @theme static {
-  /* scala superfici: 0 = testo, 950 = sfondo (la legge PrimeVue) */
-  --color-surface-0: #e8eff7;
-  --color-surface-50: #dbe5f0;
-  --color-surface-100: #c3d1e0;
-  --color-surface-200: #aab9cc;
-  --color-surface-300: #92a5ba;
-  --color-surface-400: #7a90a8;
-  --color-surface-500: #5e7490;
-  --color-surface-600: #44586f;
-  --color-surface-700: #2f4157;
-  --color-surface-800: #1e2d40;
-  --color-surface-900: #1a2535;
-  --color-surface-950: #0f1923;
+  --font-sans: "Geist Variable", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
 
+  /* Scala superfici per PrimeVue: 0 = testo, 950 = fondo. Cambia col tema. */
+  --color-surface-0: #efe6da;
+  --color-surface-50: #e0d7cb;
+  --color-surface-100: #cbc3b8;
+  --color-surface-200: #b7b0a6;
+  --color-surface-300: #a39d94;
+  --color-surface-400: #a39d94;
+  --color-surface-500: #827c74;
+  --color-surface-600: #4a4740;
+  --color-surface-700: #3a3833;
+  --color-surface-800: #302e2a;
+  --color-surface-900: #262522;
+  --color-surface-950: #1b1a18;
+
+  /* Semantici neutri */
   --color-fondo: var(--color-surface-950);
+  --color-fondo-profondo: #141312; /* menu a tendina */
   --color-card: var(--color-surface-900);
-  --color-campo: var(--color-surface-800);
-  --color-testo: var(--color-surface-0); /* 13.32:1 */
-  --color-testo2: var(--color-surface-400); /* 4.69:1 */
+  --color-campo: var(--color-surface-800); /* pillole e superfici interne */
+  --color-bordo: var(--color-surface-700);
+  --color-bordo-forte: var(--color-surface-600);
+  --color-testo: var(--color-surface-0); /* 12.4:1 */
+  --color-testo2: var(--color-surface-400);
+  --color-testo3: var(--color-surface-500); /* solo testo non essenziale */
 
-  /* Brand e azioni. 4.20:1: NON per i valori monetari. */
-  --color-accent: #3b82f6;
-  /* rimanente sopra zero, risparmi, progressi in regola. 6.09:1 */
-  --color-positivo: #10b981;
-  /* sfondi, bordi, icone. 4.21:1: come TESTO usare errore-testo */
-  --color-errore: #f43f5e;
-  --color-errore-testo: #fb7185; /* 5.74:1 */
-  /* proiezione di sfondamento, dati parziali. 9.25:1 */
-  --color-avviso: #eab308;
-  /* bordo card. 1.72:1 (vedi Flutter AppColors.border per il perché) */
-  --color-bordo: rgb(255 255 255 / 0.14);
+  /* Blocchi pieni (uguali di giorno e di notte, tranne la crema) */
+  --color-inchiostro: #161513; /* testo sui blocchi chiari */
+  --color-inchiostro-velo: rgb(22 21 19 / 0.12);
+  --color-inchiostro-linea: rgb(22 21 19 / 0.28);
+  --color-salvia: #c3cc8c; /* entrate */
+  --color-arancio: #f5a574; /* uscite, budget sforato */
+  --color-rosso: #eb827b;
+  --color-crema: #e8d8c9; /* saldo, risparmio, azione principale */
+  --color-crema-scuro: #d9c7b5;
+  --color-ardesia: #4b607f; /* informazione, testo crema sopra */
+  --color-pietra: #b9b5ad;
+  --color-su-inchiostro: #efe6da; /* testo sui fondi neri */
+  --color-pomello: #efe6da; /* pallino degli interruttori */
+
+  /* Testo d'accento: sul fondo chiaro i colori dei blocchi sparirebbero */
+  --color-fg-positivo: #c3cc8c;
+  --color-fg-negativo: #eb827b;
+  --color-fg-avviso: #f5a574;
+  --color-fg-accento: #e8d8c9;
+  --color-anello: #e8d8c9;
+
+  /* Persone (avatar) e colori dei salvadanai */
+  --color-persona-me: #b3c1cf;
+  --color-persona-partner: #c2b4d0;
+  --color-persona-cassa: #bdb8af;
+  --color-av-nebbia: #b3c1cf;
+  --color-av-argilla: #d6a48c;
+  --color-av-kaki: #cdbc93;
+  --color-av-pietra: #bdb8af;
+  --color-av-rosa: #d9a9b0;
+  --color-av-lilla: #c2b4d0;
+
+  /* Pillola di navigazione: scura anche di giorno (non cambia col tema) */
+  --color-dock-fondo: #141312;
+  --color-dock-voce: #262522;
+  --color-dock-testo: #a39d94;
+  --color-dock-testo-on: #efe6da;
+  --color-dock-attiva: #e8d8c9;
+
+  /* Grafico: palette categoriale validata (fondo #262522 e #fdfcfa) */
+  --color-chart-1: #cf7e4b;
+  --color-chart-2: #5182c1;
+  --color-chart-3: #a9912b;
+  --color-chart-4: #a2568a;
+  --color-chart-5: #549957;
+  --color-chart-6: #9d82cc;
+
+  /* Vecchi nomi, tenuti per le viste: puntano alla palette nuova */
+  --color-accent: var(--color-crema);
+  --color-positivo: var(--color-fg-positivo);
+  --color-errore: var(--color-arancio);
+  --color-errore-testo: var(--color-fg-avviso);
+  --color-avviso: var(--color-fg-avviso);
+
+  --radius-blocco: 28px;
+  --radius-pannello: 20px;
+  --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* ---------- Modalità Giorno ---------- */
+:root[data-theme="light"] {
+  --color-surface-0: #1b1a18;
+  --color-surface-50: #2c2a27;
+  --color-surface-100: #403d39;
+  --color-surface-200: #54504b;
+  --color-surface-300: #64605a;
+  --color-surface-400: #64605a;
+  --color-surface-500: #8a847b;
+  --color-surface-600: #cdc6ba;
+  --color-surface-700: #e4ded4;
+  --color-surface-800: #efebe4;
+  --color-surface-900: #fdfcfa;
+  --color-surface-950: #f4f1ec;
+  --color-fondo-profondo: #ffffff;
+  --color-crema: #e5cfb8; /* un tono più profondo per staccarsi dal fondo */
+  --color-crema-scuro: #d9bfa5;
+  --color-pomello: #ffffff;
+  --color-fg-positivo: #5b6a22;
+  --color-fg-negativo: #b3423a;
+  --color-fg-avviso: #9e4e1a;
+  --color-fg-accento: #7d5f44;
+  --color-anello: #1b1a18;
+  --shadow-pop: 0 16px 40px rgba(60, 45, 30, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  color-scheme: light;
 }
 
 html {
   color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   background: var(--color-fondo);
   color: var(--color-testo);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-anello);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+@layer components {
+  /* Numeri: cifre tabellari e decimali attenuati (<Euro>) */
+  .num { font-variant-numeric: tabular-nums; letter-spacing: -0.035em; }
+  .dec { opacity: 0.45; }
+  .emo { display: inline-block; width: 1.25em; height: 1.25em; vertical-align: -0.25em; object-fit: contain; }
+
+  .eyebrow { font-size: 13px; font-weight: 500; color: var(--color-testo2); margin-bottom: 8px; }
+  .display { font-size: clamp(40px, 6vw, 64px); font-weight: 500; letter-spacing: -0.045em; line-height: 1; }
+  .panel { background: var(--color-card); border-radius: 28px; padding: 32px; min-width: 0; }
+  .panel-title { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; }
+  .block { border-radius: 28px; padding: 24px; color: var(--color-inchiostro); min-width: 0; }
+
+  /* Bottoni a pillola */
+  .pill-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 52px; padding: 0 24px; border-radius: 999px; font-weight: 600; font-size: 15px;
+    transition: transform 0.15s, background 0.2s, opacity 0.2s; cursor: pointer;
+  }
+  .pill-btn:active { transform: scale(0.98); }
+  .pill-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .pill-btn--ink { background: var(--color-inchiostro); color: var(--color-su-inchiostro); }
+  .pill-btn--cream { background: var(--color-crema); color: var(--color-inchiostro); }
+  .pill-btn--cream:hover:not(:disabled) { background: var(--color-crema-scuro); }
+  .pill-btn--sage { background: var(--color-salvia); color: var(--color-inchiostro); }
+  .pill-btn--ghost { color: var(--color-testo2); box-shadow: inset 0 0 0 1.5px var(--color-bordo-forte); }
+  .pill-btn--ghost:hover { color: var(--color-testo); }
+  .pill-btn--danger { color: var(--color-fg-avviso); box-shadow: inset 0 0 0 1.5px currentColor; }
+  .pill-btn--sm { height: 40px; padding: 0 16px; font-size: 14px; }
+
+  .circle-btn {
+    width: 44px; height: 44px; border-radius: 50%; flex: none; display: grid; place-items: center;
+    background: var(--color-card); color: var(--color-testo); font-size: 20px; cursor: pointer;
+    transition: background 0.2s, transform 0.15s;
+  }
+  .circle-btn:hover { background: var(--color-campo); }
+  .circle-btn:active { transform: scale(0.94); }
+
+  /* Selettore a segmenti */
+  .seg { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--color-fondo); max-width: 100%; }
+  .seg button {
+    height: 34px; padding: 0 16px; border-radius: 999px; font-size: 13.5px; font-weight: 500;
+    color: var(--color-testo2); cursor: pointer; white-space: nowrap; transition: background 0.2s, color 0.2s;
+  }
+  .seg button:hover { color: var(--color-testo); }
+  .seg button[aria-pressed="true"] { background: var(--color-campo); color: var(--color-testo); }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px;
+    border-radius: 999px; font-size: 12.5px; font-weight: 500; background: var(--color-inchiostro-velo);
+  }
+  .bar { height: 8px; border-radius: 999px; background: var(--color-bordo); overflow: hidden; }
+  .bar > span { display: block; height: 100%; border-radius: 999px; background: var(--color-crema); transition: width 0.6s; }
+
+  /* Campi */
+  .campo {
+    width: 100%; height: 52px; padding: 0 18px; border-radius: 16px; border: 0;
+    background: var(--color-campo); color: var(--color-testo); font: inherit; outline: none;
+  }
+  .campo:focus { box-shadow: 0 0 0 2px var(--color-anello); }
+  .etichetta { display: block; font-size: 13px; font-weight: 500; color: var(--color-testo2); margin-bottom: 8px; }
+  .errore-campo { font-size: 13px; color: var(--color-fg-avviso); margin-top: 6px; }
+
+  /* Righe di elenco */
+  .riga {
+    display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 18px; min-width: 0;
+    transition: background 0.15s;
+  }
+  .riga:hover { background: var(--color-campo); }
+  .riga-ic {
+    width: 44px; height: 44px; border-radius: 50%; background: var(--color-campo);
+    display: grid; place-items: center; font-size: 20px; flex: none;
+  }
+  .riga-testo { flex: 1; min-width: 0; }
+  .riga-testo b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .riga-testo small { display: block; font-size: 13px; color: var(--color-testo2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .vuoto { color: var(--color-testo2); font-size: 14px; padding: 40px 0; text-align: center; }
+  .box-errore { border-radius: 18px; padding: 14px 18px; background: color-mix(in srgb, var(--color-arancio) 18%, transparent); color: var(--color-fg-avviso); font-size: 14px; }
+
+  @media (max-width: 640px) {
+    .panel { padding: 20px; border-radius: 20px; }
+    .block { padding: 20px; border-radius: 20px; }
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal { opacity: 0; transform: translateY(12px); animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; animation-delay: calc(var(--i, 0) * 70ms); }
+  @keyframes rise { to { opacity: 1; transform: none; } }
 }

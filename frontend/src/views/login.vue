@@ -34,22 +34,23 @@ async function entra({ valid, values }) {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center px-6 py-12">
-    <div class="flex w-full max-w-sm flex-col items-center gap-8 rounded-2xl border border-bordo bg-card px-8 py-10">
-      <div class="flex flex-col items-center gap-3">
-        <img src="/logo.svg" alt="Budget App" class="h-16 w-16" />
-        <h1 class="text-3xl font-bold text-testo">Benvenuto</h1>
+  <div class="flex min-h-[80dvh] items-center justify-center">
+    <div class="panel flex w-full max-w-sm flex-col gap-8">
+      <div>
+        <img src="/logo.svg" alt="" class="mb-6 h-12 w-12" />
+        <div class="eyebrow">Budget</div>
+        <h1 class="text-[40px] leading-none font-medium tracking-[-0.045em]">Bentornato</h1>
       </div>
       <Form :initialValues="{ email: '', password: '' }" :resolver="resolver" class="flex w-full flex-col gap-4" @submit="entra">
-        <IconField>
-          <InputIcon class="pi pi-user" />
-          <InputText name="email" type="email" autocomplete="username" placeholder="Email" fluid />
-        </IconField>
-        <IconField>
-          <InputIcon class="pi pi-lock" />
-          <InputText name="password" type="password" autocomplete="current-password" placeholder="Password" fluid />
-        </IconField>
-        <Button type="submit" label="Entra" fluid />
+        <div>
+          <label class="etichetta" for="email">Email</label>
+          <InputText id="email" name="email" type="email" autocomplete="username" fluid class="h-[52px]" />
+        </div>
+        <div>
+          <label class="etichetta" for="password">Password</label>
+          <InputText id="password" name="password" type="password" autocomplete="current-password" fluid class="h-[52px]" />
+        </div>
+        <button type="submit" class="pill-btn pill-btn--cream mt-2 w-full">Entra</button>
       </Form>
     </div>
   </div>
