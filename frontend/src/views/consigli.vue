@@ -4,7 +4,9 @@ import { useToast } from "primevue/usetoast";
 import { useConsigliStore } from "@/stores/consigli.js";
 import { useDashboardStore } from "@/stores/dashboard.js";
 import { erroreLeggibile } from "@/services/api.js";
-import { euro } from "@/utils/budget.js";
+import { eur } from "@/utils/formato.js";
+import { nomeMese } from "@/utils/budget.js";
+const euro = (v) => eur(v, { corto: true });
 
 const toast = useToast();
 const consigli = useConsigliStore();
@@ -51,60 +53,57 @@ const altezza = (c, m) => (massimo(c) > 0 ? Math.min(Math.max((m.speso / massimo
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 px-4 pt-6">
-    <div>
-      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-testo2">Budget</p>
-      <h1 class="text-3xl font-bold text-testo">Consigli</h1>
+  <div>
+    <div class="mb-8 sm:mb-10">
+      <router-link to="/" class="eyebrow inline-flex items-center gap-1.5 hover:text-testo"><i class="ph-bold ph-arrow-left" />Home</router-link>
+      <h1 class="display">Consigli</h1>
     </div>
 
     <template v-if="consigli.loading && !consigli.lista.length">
-      <Skeleton v-for="i in 2" :key="i" height="11rem" borderRadius="16px" />
+      <Skeleton v-for="i in 2" :key="i" height="13rem" borderRadius="28px" class="mb-3" />
     </template>
 
-    <div v-else-if="!consigli.lista.length" class="flex flex-col items-center gap-2 px-6 py-16 text-center">
-      <i class="pi pi-check-circle text-4xl text-testo2" />
-      <p class="text-lg font-semibold text-testo">Nessun consiglio</p>
-      <p class="text-sm text-testo2">
-        I budget rispecchiano le tue spese. I consigli vengono ricalcolati a fine mese, e servono almeno tre mesi di
-        storico per categoria.
+    <div v-else-if="!consigli.lista.length" class="panel flex flex-col items-center gap-2 py-16 text-center">
+      <i class="ph-bold ph-check-circle text-4xl text-fg-accento" />
+      <p class="text-lg font-semibold">Nessun consiglio</p>
+      <p class="max-w-[52ch] text-sm text-testo2">
+        I budget rispecchiano le tue spese. I consigli guardano solo le uscite, vengono ricalcolati a fine mese e servono almeno tre
+        mesi di storico per categoria.
       </p>
     </div>
 
-    <article
-      v-for="c in consigli.lista"
-      :key="c.documentId"
-      class="rounded-2xl border bg-card p-4"
-      :class="nuovi.has(c.documentId) ? (c.tipo === 'alza' ? 'border-errore/50' : 'border-positivo/50') : 'border-bordo'"
-    >
-      <div class="flex items-center gap-2">
-        <i :class="['pi', c.tipo === 'alza' ? 'pi-arrow-up-right text-errore-testo' : 'pi-arrow-down-right text-positivo']" />
-        <span v-if="c.categorie?.icona">{{ c.categorie.icona }}</span>
-        <h2 class="flex-1 font-semibold text-testo">{{ c.categorie?.Nome }}</h2>
-        <span class="font-bold" :class="c.tipo === 'alza' ? 'text-errore-testo' : 'text-positivo'">
-          {{ euro(c.budgetAttuale) }} → {{ euro(c.budgetProposto) }}
-        </span>
-      </div>
-      <p class="mt-2 text-sm text-testo2">{{ c.testo }}</p>
-
-      <div v-if="c.mesiAnalizzati?.length" class="mt-3 flex items-end gap-1">
-        <div v-for="m in c.mesiAnalizzati" :key="m.mese" class="flex flex-1 flex-col items-center gap-0.5">
-          <span class="text-[10px]" :class="m.speso > c.budgetAttuale ? 'text-errore-testo' : 'text-testo2'">
-            {{ Math.round(m.speso) }}
+    <div class="grid gap-3 md:grid-cols-2">
+      <article
+        v-for="c in consigli.lista"
+        :key="c.documentId"
+        class="panel reveal flex flex-col gap-4"
+        :class="{ 'shadow-[inset_0_0_0_2px_var(--color-anello)]': nuovi.has(c.documentId) }"
+      >
+        <div class="flex items-center gap-3">
+          <span class="grid h-11 w-11 flex-none place-items-center rounded-full bg-campo text-[22px]"><Emoji :e="c.categorie?.icona || '🏷️'" /></span>
+          <h2 class="min-w-0 flex-1 truncate text-[17px] font-semibold">{{ c.categorie?.Nome }}</h2>
+          <span class="chip text-inchiostro" :class="c.tipo === 'alza' ? 'bg-arancio!' : 'bg-salvia!'">
+            <i class="ph-bold" :class="c.tipo === 'alza' ? 'ph-arrow-up-right' : 'ph-arrow-down-right'" />{{ c.tipo === "alza" ? "alza" : "abbassa" }}
           </span>
-          <div
-            class="w-full rounded-sm"
-            :class="m.speso > c.budgetAttuale ? 'bg-errore' : 'bg-positivo'"
-            :style="{ height: altezza(c, m) + 'px' }"
-          />
-          <!-- "2026-07" -> "07" -->
-          <span class="text-[9px] text-testo2">{{ m.mese.slice(5) }}</span>
         </div>
-      </div>
+        <p class="num text-[34px] leading-none tracking-[-0.04em]">
+          <span class="text-testo3">{{ euro(c.budgetAttuale) }}</span> → {{ euro(c.budgetProposto) }}
+        </p>
+        <p class="text-[14.5px] text-testo2">{{ c.testo }}</p>
 
-      <div class="mt-4 flex items-center gap-2">
-        <Button label="Applica" class="flex-1" @click="applica(c)" />
-        <Button label="Ignora" severity="secondary" text @click="ignora(c)" />
-      </div>
-    </article>
+        <div v-if="c.mesiAnalizzati?.length" class="flex h-[88px] items-end gap-1.5" aria-label="Spesa dei mesi analizzati">
+          <div v-for="m in c.mesiAnalizzati" :key="m.mese" class="flex flex-1 flex-col items-center gap-1">
+            <span class="num text-[11px]" :class="m.speso > c.budgetAttuale ? 'text-fg-avviso' : 'text-testo2'">{{ Math.round(m.speso) }}</span>
+            <div class="w-full max-w-9 rounded-md" :class="m.speso > c.budgetAttuale ? 'bg-arancio' : 'bg-salvia'" :style="{ height: altezza(c, m) + 'px' }" />
+            <span class="text-[11px] font-medium text-testo2">{{ nomeMese(Number(m.mese.slice(5, 7))).slice(0, 3) }}</span>
+          </div>
+        </div>
+
+        <div class="mt-auto flex gap-2">
+          <button class="pill-btn pill-btn--cream h-12! flex-1" @click="applica(c)">Applica</button>
+          <button class="pill-btn pill-btn--ghost h-12!" @click="ignora(c)">Ignora</button>
+        </div>
+      </article>
+    </div>
   </div>
 </template>

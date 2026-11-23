@@ -22,8 +22,9 @@ const voci = [
 ];
 const attiva = (to) => {
   const p = router.currentRoute.value.path;
-  if (to === "/") return p === "/";
-  if (to === "/impostazioni") return ["/impostazioni", "/ricorrenti", "/export", "/anno", "/consigli"].some((x) => p.startsWith(x));
+  // Anno e Consigli si aprono dalla Home
+  if (to === "/") return p === "/" || p.startsWith("/anno") || p.startsWith("/consigli");
+  if (to === "/impostazioni") return p.startsWith("/impostazioni");
   return p.startsWith(to);
 };
 

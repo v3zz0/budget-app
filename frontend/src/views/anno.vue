@@ -3,8 +3,11 @@ import { computed, ref, watch } from "vue";
 import { useWalletStore } from "@/stores/wallet.js";
 import { caricaAnno } from "@/services/anno.js";
 import { erroreLeggibile } from "@/services/api.js";
-import { euro, nomeMese } from "@/utils/budget.js";
+import { nomeMese } from "@/utils/budget.js";
+import { eur } from "@/utils/formato.js";
+const euro = (v) => eur(v, { corto: true });
 import { token } from "@/utils/tokens.js";
+import { temaChiaro } from "@/tema.js";
 
 const walletStore = useWalletStore();
 
@@ -41,110 +44,120 @@ const cambiaAnno = (passo) => {
   carica();
 };
 
-const meseCorrente = new Date().getMonth();
-const grafico = computed(() => {
-  const accent = token("accent"); // esadecimale a 6 cifre: "73" = ~45% di opacità
-  return {
-    // solo le iniziali: dodici etichette intere non ci stanno su un telefono
-    labels: Array.from({ length: 12 }, (_, i) => nomeMese(i + 1)[0]),
-    datasets: [
-      {
-        data: riepilogo.value?.perMese ?? [],
-        backgroundColor: Array.from({ length: 12 }, (_, i) => (i === meseCorrente && anno.value === new Date().getFullYear() ? accent : `${accent}73`)),
-        borderRadius: 4,
-        maxBarThickness: 24,
-      },
-    ],
-  };
-});
+// Entrate e uscite per mese, due serie coi colori di significato
+const grafico = computed(() => ({
+  _tema: temaChiaro.value, // i colori del canvas si rileggono cambiando tema
+  // solo le iniziali: dodici etichette intere non ci stanno su un telefono
+  labels: Array.from({ length: 12 }, (_, i) => nomeMese(i + 1)[0]),
+  datasets: [
+    { label: "Entrate", data: riepilogo.value?.entratePerMese ?? [], backgroundColor: token("salvia"), borderRadius: 4, maxBarThickness: 18 },
+    { label: "Uscite", data: riepilogo.value?.perMese ?? [], backgroundColor: token("arancio"), borderRadius: 4, maxBarThickness: 18 },
+  ],
+}));
 const opzioniGrafico = computed(() => ({
+  _tema: temaChiaro.value,
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
     legend: { display: false },
-    tooltip: { callbacks: { title: (c) => nomeMese(c[0].dataIndex + 1), label: (c) => euro(c.parsed.y) } },
+    tooltip: { callbacks: { title: (c) => nomeMese(c[0].dataIndex + 1), label: (c) => `${c.dataset.label} ${euro(c.parsed.y)}` } },
   },
   scales: {
     x: { grid: { display: false }, border: { display: false }, ticks: { color: token("testo2"), maxRotation: 0 } },
-    y: { display: false, beginAtZero: true, suggestedMax: Math.max(...(riepilogo.value?.perMese ?? [0]), 70) * 1.4 },
+    y: { display: false, beginAtZero: true },
   },
 }));
+const mesi = computed(() =>
+  Array.from({ length: 12 }, (_, i) => {
+    const entrate = riepilogo.value?.entratePerMese?.[i] ?? 0;
+    const uscite = riepilogo.value?.perMese?.[i] ?? 0;
+    return { mese: i + 1, entrate, uscite, saldo: Math.round((entrate - uscite) * 100) / 100 };
+  }).filter((m) => m.entrate || m.uscite),
+);
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 px-4 pt-6">
-    <div class="flex items-end justify-between gap-2">
+  <div>
+    <div class="mb-8 flex flex-wrap items-end justify-between gap-4 sm:mb-10">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-testo2">
-          {{ walletStore.selectedWallet?.Nome || "Portafoglio" }}
-        </p>
-        <h1 class="text-3xl font-bold text-testo">Riepilogo anno</h1>
+        <router-link to="/" class="eyebrow inline-flex items-center gap-1.5 hover:text-testo"><i class="ph-bold ph-arrow-left" />{{ walletStore.selectedWallet?.Nome || "Home" }}</router-link>
+        <h1 class="display">Anno <span class="text-testo3">{{ anno }}</span></h1>
       </div>
-      <div class="flex items-center">
-        <Button icon="pi pi-chevron-left" text rounded severity="secondary" aria-label="Anno precedente" @click="cambiaAnno(-1)" />
-        <span class="min-w-14 text-center text-xl font-bold text-testo">{{ anno }}</span>
-        <Button icon="pi pi-chevron-right" text rounded severity="secondary" aria-label="Anno successivo" @click="cambiaAnno(1)" />
+      <div class="flex gap-2">
+        <button class="circle-btn" aria-label="Anno precedente" @click="cambiaAnno(-1)"><i class="ph-bold ph-caret-left" /></button>
+        <button class="circle-btn" aria-label="Anno successivo" @click="cambiaAnno(1)"><i class="ph-bold ph-caret-right" /></button>
       </div>
     </div>
 
-    <div v-if="errore" class="rounded-xl border border-errore/40 bg-errore/15 p-4 text-errore-testo">{{ errore }}</div>
-
+    <div v-if="errore" class="box-errore">{{ errore }}</div>
     <template v-else-if="loading">
-      <Skeleton height="7rem" borderRadius="20px" />
-      <Skeleton height="12rem" borderRadius="20px" />
+      <Skeleton height="9rem" borderRadius="28px" class="mb-3" />
+      <Skeleton height="16rem" borderRadius="28px" />
     </template>
-
-    <p v-else-if="!riepilogo || riepilogo.vuoto" class="py-16 text-center text-testo2">
-      Nessuna spesa registrata nel {{ anno }}.
-    </p>
+    <p v-else-if="!riepilogo || (riepilogo.vuoto && !riepilogo.entrate)" class="vuoto">Nessun movimento registrato nel {{ anno }}.</p>
 
     <template v-else>
       <!-- Dati parziali: il totale sarebbe più basso del vero, va detto -->
-      <div v-if="mancanti > 0" class="flex gap-3 rounded-xl border border-errore/40 bg-errore/15 p-3 text-sm text-errore-testo">
-        <i class="pi pi-exclamation-triangle mt-0.5" />
-        Mancano {{ mancanti }} transazioni: il totale qui sotto è più basso di quello reale. Riprova, o segnalalo se si ripete.
+      <div v-if="mancanti > 0" class="box-errore mb-3 flex gap-3">
+        <i class="ph-bold ph-warning mt-0.5" />Mancano {{ mancanti }} transazioni: i totali qui sotto sono più bassi di quelli reali.
       </div>
 
-      <div class="rounded-[20px] border border-bordo bg-card p-5">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.15em] text-testo2">Speso nell'anno</p>
-        <p class="mt-1 text-4xl font-bold text-testo">{{ euro(riepilogo.speso) }}</p>
-        <p v-if="riepilogo.budgetStimato > 0" class="mt-1.5 text-sm text-testo2">
-          su {{ euro(riepilogo.budgetStimato) }} di budget stimato ({{ riepilogo.mesiConsiderati }} mesi)
-        </p>
-      </div>
+      <section class="mb-3 grid grid-cols-3 gap-2 sm:gap-3">
+        <div class="blocco min-w-0 bg-salvia"><small class="text-[13px] font-medium">Entrate</small><b class="mt-4 block truncate text-[clamp(17px,4.6vw,40px)] leading-none font-normal"><Euro :v="riepilogo.entrate" corto /></b></div>
+        <div class="blocco min-w-0 bg-arancio"><small class="text-[13px] font-medium">Uscite</small><b class="mt-4 block truncate text-[clamp(17px,4.6vw,40px)] leading-none font-normal"><Euro :v="riepilogo.speso" corto /></b></div>
+        <div class="blocco min-w-0 bg-crema"><small class="text-[13px] font-medium">Saldo</small><b class="mt-4 block truncate text-[clamp(17px,4.6vw,40px)] leading-none font-normal"><Euro :v="riepilogo.entrate - riepilogo.speso" corto /></b></div>
+      </section>
 
-      <div class="rounded-[20px] border border-bordo bg-card px-3 pb-2 pt-4">
-        <Chart type="bar" :data="grafico" :options="opzioniGrafico" class="h-44" />
-      </div>
-
-      <p class="mt-2 px-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-testo2">Per categoria</p>
-      <div
-        v-for="c in riepilogo.categorie.filter((c) => c.speso > 0 || c.budgetStimato > 0)"
-        :key="c.documentId"
-        class="rounded-xl border border-bordo bg-card p-3.5"
-      >
-        <div class="flex items-center gap-2.5">
-          <span v-if="c.icona" class="text-lg">{{ c.icona }}</span>
-          <span class="flex-1 truncate text-sm font-semibold text-testo">{{ c.nome }}</span>
-          <!-- Sopra la stima: rosso e anche il segno "oltre" a parole, non solo il colore -->
-          <span class="font-bold" :class="c.oltreStima ? 'text-errore-testo' : 'text-testo'">{{ euro(c.speso) }}</span>
-        </div>
-        <template v-if="c.budgetStimato > 0">
-          <div class="mt-2 h-[5px] overflow-hidden rounded bg-campo">
-            <div class="h-full" :class="c.oltreStima ? 'bg-errore' : 'bg-accent'" :style="{ width: Math.min(c.percentuale, 1) * 100 + '%' }" />
+      <section class="panel mb-3">
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="panel-title">Mese per mese</h2>
+          <div class="flex gap-4 text-[13px] text-testo2">
+            <span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-[3px] bg-salvia" />Entrate</span>
+            <span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-[3px] bg-arancio" />Uscite</span>
           </div>
-          <p class="mt-1 text-[11px] text-testo2">
-            stima budget {{ euro(c.budgetStimato) }}<template v-if="c.oltreStima"> · oltre di {{ euro(c.speso - c.budgetStimato) }}</template>
-          </p>
-        </template>
-      </div>
+        </div>
+        <Chart type="bar" :data="grafico" :options="opzioniGrafico" class="h-48" />
+        <div class="mt-4">
+          <div class="grid grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,1fr))] gap-2 pb-2 text-[12.5px] font-medium text-testo2">
+            <span>Mese</span><span class="text-right">Entrate</span><span class="text-right">Uscite</span><span class="text-right">Saldo</span>
+          </div>
+          <div v-for="m in mesi" :key="m.mese" class="grid grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,1fr))] gap-2 border-t border-bordo py-2.5 text-[14px]">
+            <span class="truncate">{{ nomeMese(m.mese) }}</span>
+            <span class="num text-right text-fg-positivo">{{ euro(m.entrate) }}</span>
+            <span class="num text-right text-fg-negativo">{{ euro(m.uscite) }}</span>
+            <span class="num text-right font-medium">{{ euro(m.saldo) }}</span>
+          </div>
+        </div>
+      </section>
 
-      <!-- Perché il budget annuo è una stima: un numero derivato che si
-           presenta come rilevato è peggio di un numero assente -->
-      <p class="px-1 text-[11px] text-testo2">
-        Lo speso è esatto. Il budget annuo è una stima: l'app conserva solo il budget attuale di ogni categoria, non lo
-        storico, quindi se durante l'anno l'hai cambiato la stima non lo riflette.
-      </p>
+      <section class="panel">
+        <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <h2 class="panel-title">Uscite per categoria</h2>
+          <p v-if="riepilogo.budgetStimato > 0" class="text-sm text-testo2">su {{ euro(riepilogo.budgetStimato) }} di budget stimato ({{ riepilogo.mesiConsiderati }} mesi)</p>
+        </div>
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
+          <article v-for="c in riepilogo.categorie.filter((c) => c.speso > 0 || c.budgetStimato > 0)" :key="c.documentId" class="flex flex-col gap-3 rounded-[20px] p-5" :class="c.oltreStima ? 'bg-arancio text-inchiostro' : 'bg-campo'">
+            <div class="flex items-center gap-3">
+              <span class="grid h-10 w-10 flex-none place-items-center rounded-full text-xl" :class="c.oltreStima ? 'bg-inchiostro-velo' : 'bg-card'"><Emoji :e="c.icona || '🏷️'" /></span>
+              <b class="min-w-0 flex-1 truncate text-[15px] font-medium">{{ c.nome }}</b>
+            </div>
+            <strong class="num text-[26px] leading-none font-normal">{{ euro(c.speso) }}</strong>
+            <template v-if="c.budgetStimato > 0">
+              <div class="bar h-1.5!" :class="{ 'bg-inchiostro-velo!': c.oltreStima }">
+                <span :class="c.oltreStima ? 'bg-inchiostro!' : 'bg-salvia!'" :style="{ width: Math.min(c.percentuale, 1) * 100 + '%' }" />
+              </div>
+              <small class="text-[13px]" :class="{ 'text-testo2': !c.oltreStima }">
+                stima {{ euro(c.budgetStimato) }}<template v-if="c.oltreStima"> · oltre di {{ euro(c.speso - c.budgetStimato) }}</template>
+              </small>
+            </template>
+          </article>
+        </div>
+        <!-- Perché il budget annuo è una stima: un numero derivato che si
+             presenta come rilevato è peggio di un numero assente -->
+        <p class="mt-5 text-[12.5px] text-testo2">
+          Lo speso è esatto. Il budget annuo è una stima: l'app conserva solo il budget attuale di ogni categoria, non lo storico.
+        </p>
+      </section>
     </template>
   </div>
 </template>
