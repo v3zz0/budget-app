@@ -11,10 +11,12 @@ const TIMEOUT = 3 * 60 * 1000;
  * Carica 1..N estratti conto (PDF o CSV, anche da conti diversi): il backend
  * unisce il testo di tutti e produce un unico report. `mese` = "YYYY-MM".
  */
-export async function analizzaEstratti({ files, walletId, mese }) {
+export async function analizzaEstratti({ files, walletId, mese, estratto }) {
   const form = new FormData();
   form.append("walletId", walletId);
   form.append("mese", mese);
+  // Condiviso: "mio" (solo i movimenti pagati o ricevuti da me) o "cassa"
+  if (estratto) form.append("estratto", estratto);
   // Tutti sotto il campo "pdf", CSV compresi: lato server diventano un array.
   for (const f of files) form.append("pdf", f, f.name);
 

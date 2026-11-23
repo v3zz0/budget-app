@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
-import { caricaMese } from "@/services/dashboard.js";
+import { caricaConto, caricaMese } from "@/services/dashboard.js";
+import { useWalletStore } from "./wallet.js";
 import { erroreLeggibile } from "@/services/api.js";
 import { proiezioneFineMese, spostaMese } from "@/utils/budget.js";
 
@@ -20,6 +21,7 @@ export const useDashboardStore = defineStore("dashboard", {
     walletId: null,
     categorie: [], // ognuna con le sole transazioni del mese
     precedente: [], // lo stesso per il mese prima (variazioni nelle card della Home)
+    conto: [], // condiviso: tutti i movimenti di sempre (conto tra voi, cassa)
     loading: false,
     errore: null,
   }),
@@ -55,11 +57,13 @@ export const useDashboardStore = defineStore("dashboard", {
       this.errore = null;
       const n = ++ultima;
       try {
-        const [categorie, precedente] = await Promise.all([
+        const condiviso = useWalletStore().wallets.find((w) => w.documentId === walletId)?.condiviso;
+        const [categorie, precedente, conto] = await Promise.all([
           caricaMese(walletId, this.mese),
           caricaMese(walletId, spostaMese(this.mese, -1)),
+          condiviso ? caricaConto(walletId) : [],
         ]);
-        if (n === ultima) Object.assign(this, { categorie, precedente });
+        if (n === ultima) Object.assign(this, { categorie, precedente, conto });
       } catch (e) {
         if (n === ultima) this.errore = erroreLeggibile(e);
       } finally {

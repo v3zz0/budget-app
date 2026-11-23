@@ -18,13 +18,23 @@ export const useWalletStore = defineStore("wallet", {
     walletId: (s) => s.selectedWallet?.documentId || null,
     /** Io, come persona (nome visualizzato, foto, colore). */
     io: () => persona(useAuthStore().userInfo),
+    /** Il mio ruolo in un portafoglio: "creatore" o "membro". */
+    mioRuolo: () => (w) => (w?.membro?.id && w.membro.id === useAuthStore().userInfo?.id ? "membro" : "creatore"),
     /** Ho creato io questo portafoglio? (nel condiviso solo il creatore lo elimina) */
-    creatoDaMe: () => (w) => !w?.creatoDa || w.creatoDa.id === useAuthStore().userInfo?.id,
+    creatoDaMe() {
+      return (w) => this.mioRuolo(w) === "creatore";
+    },
     /** L'altra persona di un portafoglio condiviso, o null. Il lilla è suo. */
-    partnerDi: () => (w) => {
-      const mioId = useAuthStore().userInfo?.id;
-      const altro = [w?.creatoDa, ...(w?.membri || [])].find((u) => u && u.id !== mioId);
-      return w?.condiviso && altro ? persona(altro, "lilla") : null;
+    partnerDi() {
+      return (w) => {
+        if (!w?.condiviso) return null;
+        const altro = this.mioRuolo(w) === "creatore" ? w.membro : w.users_permissions_user;
+        return altro ? persona(altro, "lilla") : null;
+      };
+    },
+    /** Persona di un ruolo nel portafoglio ("creatore" | "membro" | "cassa"). */
+    personaDi() {
+      return (w, r) => (r === "cassa" ? "cassa" : r === this.mioRuolo(w) ? this.io : this.partnerDi(w));
     },
   },
 

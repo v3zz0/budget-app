@@ -10,6 +10,7 @@ import { erroreLeggibile } from "@/services/api.js";
 import { nomeMese } from "@/utils/budget.js";
 import { eur } from "@/utils/formato.js";
 import { parseImporto, testoImporto } from "@/utils/movimenti.js";
+import Avatar from "@/components/Avatar.vue";
 
 const confirm = useConfirm();
 const toast = useToast();
@@ -91,14 +92,20 @@ async function salvaRisparmio() {
 }
 
 // ── Movimenti di un salvadanaio personale ───────────────────────────────────
-const mov = reactive({ importo: "", nota: "", da: "nuovi", mese: "" });
+const mov = reactive({ importo: "", nota: "", da: "nuovi", mese: "", chi: null });
+// Condiviso: il salvadanaio è di tutti e due, ogni movimento dice chi l'ha fatto
+const condiviso = computed(() => !!walletStore.selectedWallet?.condiviso);
+const io = computed(() => walletStore.mioRuolo(walletStore.selectedWallet));
+const partner = computed(() => walletStore.partnerDi(walletStore.selectedWallet));
+const persona = (r) => walletStore.personaDi(walletStore.selectedWallet, r);
+const chiTesto = (r) => (r === io.value ? " tuo" : ` di ${partner.value?.nome}`);
 async function muovi(segno) {
   const v = parseImporto(mov.importo);
   if (!(v > 0)) return avviso("warn", "Inserisci un importo maggiore di zero");
   const daMese = segno > 0 && mov.da === "mensili" ? mov.mese : null;
   if (segno > 0 && mov.da === "mensili" && !daMese) return avviso("warn", "Nessun risparmio mensile disponibile");
   const ok = await esegui(
-    () => muoviSalvadanaio(walletStore.walletId, sel.value, { importo: segno * v, nota: mov.nota.trim(), daMese }),
+    () => muoviSalvadanaio(walletStore.walletId, sel.value, { importo: segno * v, nota: mov.nota.trim(), daMese, chi: condiviso.value ? mov.chi || io.value : null }),
     segno > 0 ? (daMese ? `Spostati ${eur(v)} da ${etichettaMese(daMese).toLowerCase()}` : `Versati ${eur(v)}`) : `Prelevati ${eur(v)}`,
   );
   if (ok) Object.assign(mov, { importo: "", nota: "" });
@@ -148,7 +155,7 @@ async function crea() {
   <div>
     <div class="mb-8 flex flex-col items-start justify-between gap-6 sm:mb-10 sm:flex-row sm:items-end">
       <div>
-        <div class="eyebrow">Risparmi di {{ walletStore.selectedWallet?.Nome || "portafoglio" }}</div>
+        <div class="eyebrow">{{ condiviso ? `Risparmi di ${walletStore.selectedWallet.Nome} · tu e ${partner?.nome}` : `Risparmi di ${walletStore.selectedWallet?.Nome || "portafoglio"}` }}</div>
         <h1 class="display">Salvadanaio</h1>
       </div>
       <button class="pill-btn pill-btn--cream" :disabled="!stato" @click="nuovo.aperto = true"><i class="ph-bold ph-plus" />Nuovo salvadanaio</button>
@@ -305,9 +312,10 @@ async function crea() {
             <div>
               <p v-if="!cartella.movimenti.length" class="vuoto">Ancora nessun movimento.<br />Fai il primo versamento qui accanto.</p>
               <div v-for="(m, i) in cartella.movimenti" :key="m.id" class="group flex items-center gap-4 py-3.5" :class="{ 'border-t border-bordo': i }">
+                <Avatar v-if="m.chi" :p="persona(m.chi)" :size="40" />
                 <div class="min-w-0 flex-1">
                   <b class="block text-[15px] font-medium">
-                    {{ m.importo >= 0 ? "Versamento" : "Prelievo" }}<template v-if="m.nota"> · {{ m.nota }}</template>
+                    {{ m.importo >= 0 ? "Versamento" : "Prelievo" }}<template v-if="m.chi">{{ chiTesto(m.chi) }}</template><template v-if="m.nota"> · {{ m.nota }}</template>
                   </b>
                   <small class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-testo2">
                     {{ m.data.split("-").reverse().join("/") }}
@@ -353,6 +361,23 @@ async function crea() {
                 <i class="ph-bold ph-info mt-0.5" />
                 {{ mov.da === "nuovi" ? "Si aggiungono al totale del salvadanaio: un regalo, un bonus." : "Escono dal mese scelto: il totale del portafoglio non cambia." }}
               </p>
+              <template v-if="condiviso">
+                <span id="chi-l" class="-mb-1.5 text-[13px] font-medium text-testo2">Chi versa o preleva?</span>
+                <div class="grid grid-cols-2 gap-1 rounded-full bg-card p-1" role="radiogroup" aria-labelledby="chi-l">
+                  <button
+                    v-for="r in [io, io === 'creatore' ? 'membro' : 'creatore']"
+                    :key="r"
+                    type="button"
+                    role="radio"
+                    :aria-checked="(mov.chi || io) === r"
+                    class="flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-full px-2 text-[13.5px] font-medium text-testo2"
+                    :class="{ 'bg-crema text-inchiostro!': (mov.chi || io) === r }"
+                    @click="mov.chi = r"
+                  >
+                    <Avatar :p="persona(r)" :size="22" /><span class="truncate">{{ r === io ? "Io" : partner?.nome }}</span>
+                  </button>
+                </div>
+              </template>
               <input v-model="mov.nota" maxlength="120" placeholder="Nota · facoltativa" autocomplete="off" class="h-12 w-full rounded-full bg-card px-5 text-[14.5px] text-testo outline-none placeholder:text-testo3 focus:shadow-[inset_0_0_0_2px_var(--color-testo3)]" />
               <div class="grid grid-cols-2 gap-2">
                 <button class="pill-btn pill-btn--cream h-12!" :disabled="occupato" @click="muovi(1)">Versa</button>

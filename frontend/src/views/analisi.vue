@@ -22,6 +22,10 @@ const oggi = new Date();
 const mese = ref({ anno: oggi.getFullYear(), mese: oggi.getMonth() + 1 });
 const nomeDelMese = computed(() => nomeMese(mese.value.mese).toLowerCase());
 const files = ref([]);
+// Condiviso: di chi è l'estratto conto?
+const condiviso = computed(() => !!walletStore.selectedWallet?.condiviso);
+const partner = computed(() => walletStore.partnerDi(walletStore.selectedWallet));
+const estratto = ref("mio");
 const sopra = ref(false);
 const inputFile = ref(null);
 const stato = ref("carica"); // carica | corso | risultato
@@ -62,7 +66,7 @@ async function analizza() {
   clearInterval(timer);
   timer = setInterval(() => passo.value < PASSI.length - 1 && passo.value++, 1800);
   try {
-    const r = await analizzaEstratti({ files: files.value, walletId: id, mese: chiaveMese(mese.value.anno, mese.value.mese) });
+    const r = await analizzaEstratti({ files: files.value, walletId: id, mese: chiaveMese(mese.value.anno, mese.value.mese), estratto: condiviso.value ? estratto.value : null });
     if (id !== walletStore.walletId) return; // cambiato portafoglio nel frattempo
     report.value = r;
     chiuse.value = new Set();
@@ -181,6 +185,17 @@ const ignora = (x) => chiudi(x, "Ignorata");
           </div>
           <p class="mt-4 flex gap-1.5 text-[12.5px] leading-snug text-testo2">
             <i class="ph-bold ph-info mt-0.5" />I movimenti vengono letti in modo esatto, senza AI. Il modello suggerisce le categorie e scrive il giudizio del mese.
+          </p>
+        </div>
+        <div v-if="condiviso" class="panel p-6!">
+          <div class="mb-3 text-[13px] font-medium text-testo2">Di chi è l'estratto conto?</div>
+          <div class="seg flex!" role="group" aria-label="Di chi è l'estratto conto">
+            <button class="flex-1" :aria-pressed="estratto === 'mio'" @click="estratto = 'mio'">Mio</button>
+            <button class="flex-1" :aria-pressed="estratto === 'cassa'" @click="estratto = 'cassa'">Conto cointestato</button>
+          </div>
+          <p class="mt-4 flex gap-1.5 text-[12.5px] leading-snug text-testo2">
+            <i class="ph-bold ph-info mt-0.5" />
+            {{ estratto === "mio" ? `Si confronta solo con i movimenti pagati o ricevuti da te: le spese di ${partner?.nome} non risultano mancanti.` : "Si confronta solo con i movimenti della cassa comune." }}
           </p>
         </div>
         <p v-if="errore" class="box-errore">{{ errore }}</p>

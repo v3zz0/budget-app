@@ -81,7 +81,7 @@ function esci() {
         :aria-expanded="menuAperto"
         @click.stop="menuAperto = !menuAperto"
       >
-        <span v-if="sel?.condiviso" class="-ml-2 flex flex-none">
+        <span v-if="sel?.condiviso" class="-ml-2 flex flex-none max-[380px]:hidden">
           <Avatar :p="io" :size="22" />
           <Avatar :p="walletStore.partnerDi(sel)" :size="22" class="-ml-[7px] ring-2 ring-card" />
         </span>

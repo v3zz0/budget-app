@@ -14,6 +14,10 @@ const corpo = (t) => ({
     RicorrenzaTemporale: t.ricorrente ? t.data : null,
     Contanti: t.contanti,
     categorie: t.categoriaId,
+    // Condiviso: chi ha pagato e la parte di chi ha creato il portafoglio
+    // (il server mette i default e la quota della cassa)
+    ...(t.pagatoDa && { pagatoDa: t.pagatoDa }),
+    ...(t.quota != null && { quota: t.quota }),
   },
 });
 
@@ -44,7 +48,7 @@ export const interrompiRicorrente = (id) =>
   api.put(`${URL}/${id}`, { data: { TransazioneRicorrente: false, RicorrenzaTemporale: null, InPausa: false } });
 
 export const trovaTransazione = async (id) =>
-  (await api.get(`${URL}/${id}`, { params: { populate: { categorie: { fields: ["Nome", "Tipo", "Nascosta", "icona"] } } } }))
+  (await api.get(`${URL}/${id}`, { params: { populate: { categorie: { fields: ["Nome", "Tipo", "Nascosta", "icona"] }, creatoDa: { fields: ["id"] }, modificatoDa: { fields: ["id"] } } } }))
     .data.data;
 
 /** Modifica di singoli campi (Analisi: "Era in contanti", "Usa importo banca"). */

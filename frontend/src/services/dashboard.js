@@ -21,7 +21,7 @@ export async function caricaMese(walletId, { anno, mese }) {
       categorie: { wallet: { documentId: { $eq: walletId } } },
       Data: { $gte: primoDelMese(anno, mese), $lte: ultimoDelMese(anno, mese) },
     },
-    populate: { categorie: { fields: ["Nome"] } },
+    populate: { categorie: { fields: ["Nome"] }, creatoDa: { fields: ["id"] }, modificatoDa: { fields: ["id"] } },
     // "id" come spareggio: senza, due spese nello stesso giorno possono
     // duplicarsi o saltare tra una pagina e l'altra.
     sort: ["Data:desc", "id:desc"],
@@ -35,4 +35,21 @@ export async function caricaMese(walletId, { anno, mese }) {
     perCategoria.get(id).push(t);
   }
   return categorie.map((c) => ({ ...c, transazionis: perCategoria.get(c.documentId) ?? [] }));
+}
+
+/**
+ * Tutti i movimenti di un portafoglio condiviso, nella forma di utils/conti.js:
+ * il conto tra voi conta TUTTI i movimenti, non solo quelli del mese.
+ */
+export async function caricaConto(walletId) {
+  const righe = await elencaTutte("/api/transazionis", {
+    filters: { categorie: { wallet: { documentId: { $eq: walletId } } } },
+    fields: ["Importo", "Data", "pagatoDa", "quota", "quotaCassa"],
+    populate: { categorie: { fields: ["Tipo"] } },
+    sort: ["Data:asc", "id:asc"],
+  });
+  return righe.map((t) => ({
+    tipo: t.categorie?.Tipo || "uscita", importo: Number(t.Importo) || 0, data: t.Data,
+    pagatoDa: t.pagatoDa, quota: t.quota, quotaCassa: t.quotaCassa,
+  }));
 }

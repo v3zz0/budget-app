@@ -4,7 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { useWalletStore } from "@/stores/wallet.js";
-import { caricaMese } from "@/services/dashboard.js";
+import { caricaConto, caricaMese } from "@/services/dashboard.js";
 import { aggiornaTransazione, creaTransazione, eliminaTransazione, trovaTransazione } from "@/services/transazioni.js";
 import { creaCategoria } from "@/services/impostazioni.js";
 import { erroreLeggibile } from "@/services/api.js";
@@ -16,6 +16,8 @@ import { appiattisci, isoLocale, parseImporto, perGiorno, testoImporto, totali }
 import Interruttore from "@/components/Interruttore.vue";
 import MeseNav from "@/components/MeseNav.vue";
 import { EMOJI } from "@/components/SceltaEmoji.vue";
+import Avatar from "@/components/Avatar.vue";
+import { altro, bilancio, effetto, miaQuota, saldoCassa } from "@/utils/conti.js";
 
 // id presente (dalla route) = modifica nello stesso foglio, assente = nuova
 const props = defineProps({ id: { type: String, default: null } });
@@ -65,16 +67,42 @@ function vaiAlMese(data) {
   if (a !== mese.value.anno || m !== mese.value.mese) mese.value = { anno: a, mese: m };
 }
 
+// ── Portafoglio condiviso ───────────────────────────────────────────────────
+const wallet = computed(() => walletStore.selectedWallet);
+const condiviso = computed(() => !!wallet.value?.condiviso);
+const io = computed(() => walletStore.mioRuolo(wallet.value));
+const partner = computed(() => walletStore.partnerDi(wallet.value));
+const regola = computed(() => Number(wallet.value?.quotaCreatore ?? 0.5));
+const persona = (r) => walletStore.personaDi(wallet.value, r);
+const conto = ref([]); // tutti i movimenti del condiviso (conto tra voi, cassa)
+async function caricaContoCondiviso() {
+  conto.value = condiviso.value ? await caricaConto(walletStore.walletId).catch(() => []) : [];
+}
+watch(() => walletStore.walletId, caricaContoCondiviso, { immediate: true });
+const traVoi = computed(() => bilancio(conto.value, io.value, regola.value));
+const fraseConto = (b) =>
+  Math.abs(b) < 0.005 ? "Siete in pari" : b > 0 ? `${partner.value?.nome} ti deve ${eur(b)}` : `Devi ${eur(-b)} a ${partner.value?.nome}`;
+
 const movimenti = computed(() => appiattisci(categorie.value));
 const tot = computed(() => totali(movimenti.value));
+const inCassa = computed(() => saldoCassa(conto.value));
 const visibili = computed(() =>
   movimenti.value.filter((m) => filtro.value === "tutti" || (filtro.value === "entrate" ? m.tipo === "entrata" : m.tipo === "uscita")),
 );
+const sottoRiga = (m) => {
+  if (m.tipo === "rimborso") return m.pagatoDa === io.value ? `rimborso a ${partner.value?.nome}` : `rimborso da ${partner.value?.nome}`;
+  if (m.tipo === "versamento") return m.pagatoDa === io.value ? "versato in cassa da te" : `versato in cassa da ${partner.value?.nome}`;
+  if (!condiviso.value || !m.pagatoDa) return m.cat.Nome + (m.Contanti ? " · contanti" : "");
+  const chi = m.pagatoDa === "cassa" ? "cassa" : m.pagatoDa === io.value ? "te" : partner.value?.nome;
+  return `${m.cat.Nome} · ${m.pagatoDa === "cassa" ? "dalla cassa" : `${m.tipo === "entrata" ? "ricevuta da" : "pagato da"} ${chi}`}`;
+};
 const gruppi = computed(() => perGiorno(visibili.value, oggi));
 
 // ── Form ─────────────────────────────────────────────────────────────────────
 const vuoto = () => ({
-  tipo: route.query.tipo === "entrata" ? "entrata" : "uscita",
+  tipo: ["entrata", "versamento"].includes(route.query.tipo) ? route.query.tipo : "uscita",
+  pagatoDa: null, // condiviso: ruolo di chi paga (null = io)
+  miaQuota: null, // condiviso: la mia parte 0..1 (null = regola del portafoglio)
   importo: "",
   categoriaId: null,
   descrizione: "",
@@ -84,7 +112,7 @@ const vuoto = () => ({
 });
 const form = reactive(vuoto());
 // "+ Altro": categoria scritta a mano
-const altro = reactive({ attivo: false, nome: "", icona: "🏷️", aggiungi: true, emojiAperte: false });
+const altra = reactive({ attivo: false, nome: "", icona: "🏷️", aggiungi: true, emojiAperte: false });
 const errori = reactive({ importo: false, categoria: false, altro: "" });
 const salvando = ref(false);
 const originale = ref(null); // la transazione aperta in modifica
@@ -94,31 +122,61 @@ const inputFoto = ref(null);
 const foglio = ref(null);
 
 const entrata = computed(() => form.tipo === "entrata");
+const speciale = computed(() => form.tipo === "versamento" || form.tipo === "rimborso");
+// Condiviso: chi paga e la mia parte, con i valori predefiniti
+const chiPaga = computed(() => form.pagatoDa || io.value);
+const quotaMia = computed(() => form.miaQuota ?? miaQuota(null, io.value, regola.value));
+const divisioneScelta = computed(() => (quotaMia.value === 0.5 ? "meta" : quotaMia.value === 1 ? "mia" : quotaMia.value === 0 ? "sua" : "altra"));
+const personalizzata = ref(false);
+const importoAnteprima = computed(() => parseImporto(form.importo) || 0);
+const parti = computed(() => {
+  const A = importoAnteprima.value;
+  const mia = Math.round(A * quotaMia.value * 100) / 100;
+  return { mia, sua: Math.round((A - mia) * 100) / 100 };
+});
+const quotaCreatoreForm = computed(() => (io.value === "creatore" ? quotaMia.value : Math.round((1 - quotaMia.value) * 100) / 100));
+// Effetto del movimento sul conto tra voi, dal mio punto di vista
+const effettoForm = computed(() => {
+  const e = effetto({ tipo: form.tipo, importo: importoAnteprima.value, pagatoDa: chiPaga.value, quota: quotaCreatoreForm.value, quotaCassa: regola.value }, regola.value);
+  return io.value === "membro" ? -e : e;
+});
+const fraseEffetto = computed(() => {
+  const e = effettoForm.value;
+  if (!importoAnteprima.value || Math.abs(e) < 0.005) return "Il conto tra voi non cambia";
+  return e > 0 ? `${partner.value?.nome} ti dovrà ${eur(e)} in più` : `Dovrai ${eur(-e)} in più a ${partner.value?.nome}`;
+});
+function scegliDivisione(d) {
+  personalizzata.value = d === "altra";
+  form.miaQuota = d === "meta" ? 0.5 : d === "mia" ? 1 : d === "sua" ? 0 : quotaMia.value;
+}
 // Le categorie del tipo scelto, senza le nascoste e quelle di sistema
 const pillole = computed(() => categorie.value.filter((c) => !c.Nascosta && (c.Tipo || "uscita") === form.tipo));
-const titolo = computed(() => `${originale.value ? "Modifica" : "Nuova"} ${entrata.value ? "entrata" : "uscita"}`);
+const titolo = computed(() => `${originale.value ? "Modifica" : "Nuovo"} ${form.tipo === "rimborso" ? "rimborso" : form.tipo === "versamento" ? "versamento" : entrata.value ? "entrata" : "uscita"}`.replace("Nuovo entrata", "Nuova entrata").replace("Nuovo uscita", "Nuova uscita"));
+// Versamenti e rimborsi vanno sulle categorie di sistema del condiviso
+const categoriaSistema = (tipo) => categorie.value.find((c) => c.Tipo === tipo)?.documentId;
 
 function scegliTipo(t) {
   if (form.tipo === t) return;
   form.tipo = t;
   form.categoriaId = null; // la categoria si azzera cambiando tipo
-  altro.attivo = false;
+  if (t === "versamento" && form.pagatoDa === "cassa") form.pagatoDa = null;
+  altra.attivo = false;
   errori.categoria = false;
 }
 function scegliCategoria(id) {
   form.categoriaId = id;
-  altro.attivo = false;
+  altra.attivo = false;
   errori.categoria = false;
 }
 function apriAltro() {
-  altro.attivo = true;
+  altra.attivo = true;
   form.categoriaId = null;
   errori.categoria = false;
 }
 
 function svuota() {
   Object.assign(form, vuoto(), { tipo: form.tipo });
-  Object.assign(altro, { attivo: false, nome: "", icona: "🏷️", aggiungi: true, emojiAperte: false });
+  Object.assign(altra, { attivo: false, nome: "", icona: "🏷️", aggiungi: true, emojiAperte: false });
   Object.assign(errori, { importo: false, categoria: false, altro: "" });
   righeLette.value = null;
 }
@@ -137,7 +195,9 @@ watch(
       originale.value = t;
       const c = t.categorie;
       Object.assign(form, {
-        tipo: c?.Tipo === "entrata" ? "entrata" : "uscita",
+        tipo: ["entrata", "versamento", "rimborso"].includes(c?.Tipo) ? c.Tipo : "uscita",
+        pagatoDa: t.pagatoDa || null,
+        miaQuota: t.quota == null ? null : miaQuota(t.quota, walletStore.mioRuolo(walletStore.selectedWallet)),
         importo: testoImporto(t.Importo),
         categoriaId: c && !c.Nascosta ? c.documentId : null,
         descrizione: t.Descrizione ?? "",
@@ -146,7 +206,7 @@ watch(
         contanti: !!t.Contanti,
       });
       // Categoria nascosta: si riapre su "Altro" con nome ed emoji compilati
-      Object.assign(altro, c?.Nascosta ? { attivo: true, nome: c.Nome, icona: c.icona || "🏷️", aggiungi: false } : { attivo: false, nome: "", icona: "🏷️", aggiungi: true });
+      Object.assign(altra, c?.Nascosta ? { attivo: true, nome: c.Nome, icona: c.icona || "🏷️", aggiungi: false } : { attivo: false, nome: "", icona: "🏷️", aggiungi: true });
       Object.assign(errori, { importo: false, categoria: false, altro: "" });
       vaiAlMese(t.Data);
       await carica();
@@ -172,8 +232,13 @@ onBeforeUnmount(() => document.removeEventListener("keydown", esc));
 
 /** La categoria da usare: quella scelta, oppure quella di "+ Altro" (trovata o creata). */
 async function categoriaDaUsare() {
-  if (!altro.attivo) return form.categoriaId;
-  const nome = nomeCategoria(altro.nome);
+  if (speciale.value) {
+    const id = categoriaSistema(form.tipo);
+    if (!id) throw { campo: "Manca la categoria di sistema del portafoglio condiviso: ricarica la pagina" };
+    return id;
+  }
+  if (!altra.attivo) return form.categoriaId;
+  const nome = nomeCategoria(altra.nome);
   if (nome.length < 2) throw { campo: "Scrivi il nome della categoria (almeno 2 caratteri)" };
   const omonima = categoriaOmonima(nome, categorie.value);
   if (omonima) {
@@ -184,9 +249,9 @@ async function categoriaDaUsare() {
   const nuova = await creaCategoria(walletStore.walletId, {
     nome,
     budget: 0,
-    icona: altro.icona,
+    icona: altra.icona,
     tipo: form.tipo,
-    nascosta: !altro.aggiungi,
+    nascosta: !altra.aggiungi,
   });
   return nuova.documentId;
 }
@@ -194,13 +259,19 @@ async function categoriaDaUsare() {
 async function salva() {
   const importo = parseImporto(form.importo);
   errori.importo = !(importo > 0);
-  errori.categoria = !altro.attivo && !form.categoriaId;
+  errori.categoria = !speciale.value && !altra.attivo && !form.categoriaId;
   errori.altro = "";
   if (errori.importo || errori.categoria) return;
   salvando.value = true;
   try {
     const categoriaId = await categoriaDaUsare();
-    const t = { ...form, importo, categoriaId };
+    const t = {
+      ...form,
+      importo,
+      categoriaId,
+      // Condiviso: chi paga e la quota di chi ha creato il portafoglio
+      ...(condiviso.value && { pagatoDa: chiPaga.value, quota: speciale.value ? null : quotaCreatoreForm.value }),
+    };
     let id = props.id;
     if (id) await aggiornaTransazione(id, t);
     else id = (await creaTransazione(t)).data.data.documentId;
@@ -208,11 +279,12 @@ async function salva() {
     await carica();
     evidenziato.value = id;
     setTimeout(() => evidenziato.value === id && (evidenziato.value = null), 1800);
+    if (condiviso.value) await caricaContoCondiviso();
     if (props.id) {
-      avviso("success", "Modifiche salvate");
+      avviso("success", condiviso.value ? `Modifiche salvate · ${fraseConto(traVoi.value)}` : "Modifiche salvate");
       chiudiModifica();
     } else {
-      avviso("success", entrata.value ? "Entrata salvata" : "Uscita salvata");
+      avviso("success", (form.tipo === "versamento" ? "Versamento salvato" : entrata.value ? "Entrata salvata" : "Uscita salvata") + (condiviso.value ? ` · ${fraseConto(traVoi.value)}` : ""));
       svuota();
     }
   } catch (e) {
@@ -227,12 +299,13 @@ function elimina() {
   const t = originale.value;
   confirm.require({
     header: "Eliminare il movimento?",
-    message: `${eur(Number(t.Importo))} del ${dataIt(t.Data)}${t.Descrizione ? ` (“${t.Descrizione}”)` : ""}. Non si può annullare.`,
+    message: `${eur(Number(t.Importo))} del ${dataIt(t.Data)}${t.Descrizione ? ` (“${t.Descrizione}”)` : ""}. Non si può annullare.${condiviso.value ? `\n\nSparisce anche per ${partner.value?.nome}.` : ""}`,
     acceptLabel: "Elimina",
     accept: async () => {
       try {
         await eliminaTransazione(t.documentId);
         avviso("success", "Movimento eliminato");
+        caricaContoCondiviso();
         chiudiModifica();
         await carica();
       } catch (e) {
@@ -280,13 +353,19 @@ watch(
       <section
         ref="foglio"
         class="reveal scroll-mt-4 rounded-[20px] px-5 py-6 text-inchiostro transition-colors duration-300 sm:rounded-[28px] sm:p-8"
-        :class="entrata ? 'bg-salvia' : 'bg-arancio'"
+        :class="speciale ? 'bg-pietra' : entrata ? 'bg-salvia' : 'bg-arancio'"
         aria-labelledby="titolo-foglio"
       >
         <div v-if="originale" class="mb-5 flex items-center justify-between gap-3">
           <div class="flex flex-wrap gap-1.5 text-[12.5px] font-semibold">
             <span class="inline-flex h-[30px] items-center gap-1.5 rounded-full bg-inchiostro pr-3 pl-2.5 text-su-inchiostro"><i class="ph-bold ph-pencil-simple" />Modifica</span>
             <span class="inline-flex h-[30px] items-center gap-1.5 rounded-full bg-inchiostro-velo pr-3 pl-2.5"><i class="ph-bold ph-calendar-blank" />{{ dataIt(originale.Data) }}</span>
+            <span v-if="condiviso && originale.creatoDa" class="inline-flex h-[30px] items-center gap-1.5 rounded-full bg-inchiostro-velo pr-3 pl-1.5">
+              <Avatar :p="persona(originale.creatoDa.id === wallet.membro?.id ? 'membro' : 'creatore')" :size="22" />Inserita da {{ originale.creatoDa.id === walletStore.io?.id ? "te" : partner?.nome }}
+            </span>
+            <span v-if="condiviso && originale.modificatoDa" class="inline-flex h-[30px] items-center gap-1.5 rounded-full bg-inchiostro-velo pr-3 pl-1.5">
+              <Avatar :p="persona(originale.modificatoDa.id === wallet.membro?.id ? 'membro' : 'creatore')" :size="22" />Modificata da {{ originale.modificatoDa.id === walletStore.io?.id ? "te" : partner?.nome }}
+            </span>
             <span v-if="originale.TransazioneRicorrente" class="inline-flex h-[30px] items-center gap-1.5 rounded-full bg-inchiostro-velo pr-3 pl-2.5"><i class="ph-bold ph-repeat" />Ogni mese</span>
           </div>
           <button type="button" class="grid h-10 w-10 flex-none place-items-center rounded-full bg-inchiostro-velo text-[17px] hover:bg-inchiostro-linea" aria-label="Chiudi la modifica" @click="chiudiModifica">
@@ -294,9 +373,9 @@ watch(
           </button>
         </div>
 
-        <div class="mb-6 grid auto-cols-fr grid-flow-col rounded-full bg-inchiostro-velo p-1 sm:mb-8" role="radiogroup" aria-label="Tipo di movimento">
+        <div v-if="form.tipo !== 'rimborso'" class="mb-6 grid auto-cols-fr grid-flow-col rounded-full bg-inchiostro-velo p-1 sm:mb-8" role="radiogroup" aria-label="Tipo di movimento">
           <button
-            v-for="t in [{ id: 'uscita', l: 'Uscita', i: 'ph-arrow-up-right' }, { id: 'entrata', l: 'Entrata', i: 'ph-arrow-down-left' }]"
+            v-for="t in [{ id: 'uscita', l: 'Uscita', i: 'ph-arrow-up-right' }, { id: 'entrata', l: 'Entrata', i: 'ph-arrow-down-left' }, ...(condiviso ? [{ id: 'versamento', l: 'Versamento', i: 'ph-vault' }] : [])]"
             :key="t.id"
             type="button"
             role="radio"
@@ -329,7 +408,7 @@ watch(
             <p v-if="errori.importo" class="mt-2 flex items-center gap-1.5 text-[13px] font-semibold"><i class="ph-bold ph-warning-circle" />Inserisci un importo maggiore di zero</p>
           </div>
 
-          <div>
+          <div v-if="!speciale">
             <span id="cat-l" class="mb-2.5 block text-sm font-semibold">Categoria</span>
             <div class="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="cat-l">
               <button
@@ -337,9 +416,9 @@ watch(
                 :key="c.documentId"
                 type="button"
                 role="radio"
-                :aria-checked="!altro.attivo && form.categoriaId === c.documentId"
+                :aria-checked="!altra.attivo && form.categoriaId === c.documentId"
                 class="inline-flex h-[42px] max-w-full items-center gap-2 rounded-full pr-4 pl-2.5 text-[14.5px] font-medium shadow-[inset_0_0_0_1.5px_var(--color-inchiostro-linea)] hover:shadow-[inset_0_0_0_1.5px_var(--color-inchiostro)]"
-                :class="{ 'bg-inchiostro text-su-inchiostro shadow-none!': !altro.attivo && form.categoriaId === c.documentId }"
+                :class="{ 'bg-inchiostro text-su-inchiostro shadow-none!': !altra.attivo && form.categoriaId === c.documentId }"
                 @click="scegliCategoria(c.documentId)"
               >
                 <Emoji :e="c.icona || '🏷️'" class="h-[22px]! w-[22px]!" /><span class="truncate">{{ c.Nome }}</span>
@@ -347,9 +426,9 @@ watch(
               <button
                 type="button"
                 role="radio"
-                :aria-checked="altro.attivo"
+                :aria-checked="altra.attivo"
                 class="inline-flex h-[42px] items-center gap-1.5 rounded-full border-[1.5px] border-dashed border-inchiostro-linea pr-4 pl-3 text-[14.5px] font-medium hover:border-inchiostro"
-                :class="{ 'border-transparent! bg-inchiostro text-su-inchiostro': altro.attivo }"
+                :class="{ 'border-transparent! bg-inchiostro text-su-inchiostro': altra.attivo }"
                 @click="apriAltro"
               >
                 <i class="ph-bold ph-plus text-[15px]" />Altro
@@ -357,30 +436,30 @@ watch(
             </div>
             <p v-if="errori.categoria" class="mt-2 flex items-center gap-1.5 text-[13px] font-semibold"><i class="ph-bold ph-warning-circle" />Scegli una categoria</p>
 
-            <div v-if="altro.attivo" class="mt-4 flex flex-col gap-3 rounded-[20px] bg-inchiostro-velo p-4">
+            <div v-if="altra.attivo" class="mt-4 flex flex-col gap-3 rounded-[20px] bg-inchiostro-velo p-4">
               <label class="text-sm font-semibold" for="altro-nome">Nuova categoria</label>
               <div class="flex gap-2">
                 <button
                   type="button"
                   class="grid h-[52px] w-[52px] flex-none place-items-center rounded-full bg-inchiostro-velo text-2xl hover:shadow-[inset_0_0_0_2px_var(--color-inchiostro)]"
-                  :aria-expanded="altro.emojiAperte"
+                  :aria-expanded="altra.emojiAperte"
                   aria-label="Scegli l'emoji"
-                  @click="altro.emojiAperte = !altro.emojiAperte"
+                  @click="altra.emojiAperte = !altra.emojiAperte"
                 >
-                  <Emoji :e="altro.icona" />
+                  <Emoji :e="altra.icona" />
                 </button>
-                <input id="altro-nome" v-model="altro.nome" maxlength="30" placeholder="Es. Farmacia" autocomplete="off" class="h-[52px] min-w-0 flex-1 rounded-full bg-inchiostro-velo px-5 text-inchiostro outline-none placeholder:text-inchiostro/55 focus:shadow-[inset_0_0_0_2px_var(--color-inchiostro)]" />
+                <input id="altro-nome" v-model="altra.nome" maxlength="30" placeholder="Es. Farmacia" autocomplete="off" class="h-[52px] min-w-0 flex-1 rounded-full bg-inchiostro-velo px-5 text-inchiostro outline-none placeholder:text-inchiostro/55 focus:shadow-[inset_0_0_0_2px_var(--color-inchiostro)]" />
               </div>
-              <div v-if="altro.emojiAperte" class="grid grid-cols-8 gap-1.5" role="radiogroup" aria-label="Emoji della categoria">
+              <div v-if="altra.emojiAperte" class="grid grid-cols-8 gap-1.5" role="radiogroup" aria-label="Emoji della categoria">
                 <button
                   v-for="e in EMOJI"
                   :key="e"
                   type="button"
                   role="radio"
-                  :aria-checked="altro.icona === e"
+                  :aria-checked="altra.icona === e"
                   class="grid aspect-square place-items-center rounded-xl text-[22px] hover:bg-inchiostro-velo"
-                  :class="{ 'shadow-[inset_0_0_0_2px_var(--color-inchiostro)]': altro.icona === e }"
-                  @click="(altro.icona = e), (altro.emojiAperte = false)"
+                  :class="{ 'shadow-[inset_0_0_0_2px_var(--color-inchiostro)]': altra.icona === e }"
+                  @click="(altra.icona = e), (altra.emojiAperte = false)"
                 >
                   <Emoji :e="e" />
                 </button>
@@ -389,10 +468,58 @@ watch(
               <label class="flex cursor-pointer items-center justify-between gap-4 border-t border-inchiostro-velo pt-3">
                 <span>
                   <b class="block text-sm font-semibold">Aggiungi alle mie categorie</b>
-                  <small class="text-[12.5px]">{{ altro.aggiungi ? "La ritrovi qui tra le pillole e in Impostazioni" : "Vale solo per questo movimento (resta nei report)" }}</small>
+                  <small class="text-[12.5px]">{{ altra.aggiungi ? "La ritrovi qui tra le pillole e in Impostazioni" : "Vale solo per questo movimento (resta nei report)" }}</small>
                 </span>
-                <Interruttore v-model="altro.aggiungi" class="sul-blocco" />
+                <Interruttore v-model="altra.aggiungi" class="sul-blocco" />
               </label>
+            </div>
+          </div>
+
+          <!-- Condiviso: chi paga e come si divide -->
+          <div v-if="condiviso">
+            <span id="chi-l" class="mb-2.5 block text-sm font-semibold">{{ form.tipo === "rimborso" ? "Chi ha dato i soldi" : form.tipo === "versamento" ? "Chi versa" : entrata ? "Ricevuta da" : "Pagato da" }}</span>
+            <div class="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="chi-l">
+              <button
+                v-for="r in speciale ? [io, altro(io)] : [io, altro(io), 'cassa']"
+                :key="r"
+                type="button"
+                role="radio"
+                :aria-checked="chiPaga === r"
+                class="inline-flex h-11 items-center gap-2 rounded-full pr-4 pl-2 text-[14.5px] font-medium shadow-[inset_0_0_0_1.5px_var(--color-inchiostro-linea)] hover:shadow-[inset_0_0_0_1.5px_var(--color-inchiostro)]"
+                :class="{ 'bg-inchiostro text-su-inchiostro shadow-none!': chiPaga === r }"
+                @click="form.pagatoDa = r"
+              >
+                <Avatar :p="persona(r)" :size="28" />{{ r === "cassa" ? "Cassa comune" : r === io ? "Io" : partner?.nome }}
+              </button>
+            </div>
+          </div>
+          <div v-if="condiviso && !speciale">
+            <span id="div-l" class="mb-2.5 block text-sm font-semibold">Divisione</span>
+            <div class="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="div-l">
+              <button
+                v-for="d in [{ id: 'meta', l: 'A metà' }, { id: 'mia', l: 'Tutta mia' }, { id: 'sua', l: 'Tutta sua' }, { id: 'altra', l: 'Personalizzata' }]"
+                :key="d.id"
+                type="button"
+                role="radio"
+                :aria-checked="personalizzata ? d.id === 'altra' : divisioneScelta === d.id"
+                class="h-[42px] rounded-full px-4 text-sm font-medium shadow-[inset_0_0_0_1.5px_var(--color-inchiostro-linea)]"
+                :class="{ 'bg-inchiostro text-su-inchiostro shadow-none!': personalizzata ? d.id === 'altra' : divisioneScelta === d.id }"
+                @click="scegliDivisione(d.id)"
+              >
+                {{ d.l }}
+              </button>
+            </div>
+            <div v-if="personalizzata || divisioneScelta === 'altra'" class="mt-4">
+              <input :value="Math.round(quotaMia * 100)" type="range" min="0" max="100" step="5" class="w-full accent-[var(--color-inchiostro)]" aria-label="La tua parte in percentuale" @input="form.miaQuota = Number($event.target.value) / 100" />
+              <div class="mt-1 flex justify-between text-[13px] font-semibold"><span>Tu {{ Math.round(quotaMia * 100) }}%</span><span>{{ partner?.nome }} {{ 100 - Math.round(quotaMia * 100) }}%</span></div>
+            </div>
+            <div class="mt-4 flex flex-col gap-2.5 rounded-[20px] bg-inchiostro-velo px-5 py-4">
+              <div class="flex flex-wrap justify-between gap-x-3 gap-y-1.5 text-sm">
+                <span class="inline-flex items-center gap-2"><Avatar :p="walletStore.io" :size="22" />Tu <b class="num font-semibold">{{ eur(parti.mia) }}</b></span>
+                <span class="inline-flex items-center gap-2"><Avatar :p="partner" :size="22" />{{ partner?.nome }} <b class="num font-semibold">{{ eur(parti.sua) }}</b></span>
+              </div>
+              <div class="bar bg-inchiostro-velo!"><span class="bg-inchiostro!" :style="{ width: `${quotaMia * 100}%` }" /></div>
+              <div class="flex items-center gap-1.5 border-t border-inchiostro-velo pt-2.5 text-[13.5px]"><i class="ph-bold ph-scales" />{{ fraseEffetto }}</div>
             </div>
           </div>
 
@@ -420,7 +547,7 @@ watch(
             </div>
           </div>
 
-          <div class="flex flex-col rounded-[20px] bg-inchiostro-velo">
+          <div v-if="!speciale" class="flex flex-col rounded-[20px] bg-inchiostro-velo">
             <label class="flex cursor-pointer items-center justify-between gap-4 px-5 py-3.5">
               <span><b class="block text-[14.5px] font-semibold">Ricorrente</b><small class="text-[13px]">Si ripete ogni mese lo stesso giorno</small></span>
               <Interruttore v-model="form.ricorrente" class="sul-blocco" />
@@ -457,7 +584,7 @@ watch(
 
           <div class="mt-2 flex items-center gap-3">
             <button type="submit" class="pill-btn pill-btn--ink h-[60px]! flex-1 text-base" :disabled="salvando || !walletStore.walletId">
-              {{ salvando ? "Salvo…" : originale ? "Salva modifiche" : entrata ? "Salva entrata" : "Salva uscita" }}
+              {{ salvando ? "Salvo…" : originale ? "Salva modifiche" : form.tipo === "versamento" ? "Salva versamento" : entrata ? "Salva entrata" : "Salva uscita" }}
             </button>
             <button type="button" class="h-[60px] px-4 text-[14.5px] font-semibold underline underline-offset-4" @click="originale ? chiudiModifica() : svuota()">
               {{ originale ? "Annulla" : "Svuota" }}
@@ -480,12 +607,19 @@ watch(
           </div>
         </div>
         <div class="mb-6 grid grid-cols-3 gap-1.5 sm:gap-2">
-          <div v-for="b in [{ l: 'Entrate', v: tot.entrate, c: 'bg-salvia' }, { l: 'Uscite', v: tot.uscite, c: 'bg-arancio' }, { l: 'Saldo', v: tot.saldo, c: 'bg-crema' }]" :key="b.l" class="min-w-0 rounded-[20px] px-3 py-3 text-inchiostro sm:px-5 sm:py-4" :class="b.c">
+          <div v-for="b in [{ l: 'Entrate', v: tot.entrate, c: 'bg-salvia' }, { l: 'Uscite', v: tot.uscite, c: 'bg-arancio' }, condiviso ? { l: 'In cassa', v: inCassa, c: 'bg-crema' } : { l: 'Saldo', v: tot.saldo, c: 'bg-crema' }]" :key="b.l" class="min-w-0 rounded-[20px] px-3 py-3 text-inchiostro sm:px-5 sm:py-4" :class="b.c">
             <small class="text-[13px] font-medium">{{ b.l }}</small>
             <b class="mt-3 block truncate text-[clamp(15px,4.4vw,18px)] leading-none font-normal sm:text-2xl"><Euro :v="b.v" /></b>
           </div>
         </div>
 
+        <div v-if="condiviso" class="-mt-2 mb-6 flex flex-wrap items-center justify-between gap-3 rounded-[20px] bg-campo px-5 py-4 text-sm">
+          <span class="flex items-center gap-3">
+            <span class="flex"><Avatar :p="walletStore.io" :size="28" /><Avatar :p="partner" :size="28" class="-ml-[7px] ring-2 ring-campo" /></span>
+            <b class="font-medium">{{ fraseConto(traVoi) }}</b>
+          </span>
+          <router-link v-if="Math.abs(traVoi) >= 0.005" to="/" class="text-[13.5px] font-medium text-testo2 underline underline-offset-[3px]">Salda in Home</router-link>
+        </div>
         <div v-if="errore" class="box-errore">{{ errore }}</div>
         <template v-else-if="loading && !movimenti.length">
           <Skeleton v-for="i in 5" :key="i" height="3.5rem" borderRadius="16px" class="mb-2" />
@@ -505,16 +639,19 @@ watch(
               :aria-current="props.id === m.documentId"
               @click="apriMovimento(m)"
             >
-              <span class="grid h-11 w-11 flex-none place-items-center rounded-full bg-campo text-[22px] group-hover:bg-card"><Emoji :e="m.cat.icona || '🏷️'" /></span>
+              <span class="relative grid h-11 w-11 flex-none place-items-center rounded-full bg-campo text-[22px] group-hover:bg-card">
+                <Emoji :e="m.cat.icona || '🏷️'" />
+                <Avatar v-if="condiviso && m.pagatoDa" :p="persona(m.pagatoDa)" :size="22" class="absolute -right-1 -bottom-1 ring-2 ring-card" />
+              </span>
               <span class="min-w-0 flex-1">
                 <b class="block truncate text-[15px] font-medium">
                   {{ m.Descrizione || m.cat.Nome }}
                   <span v-if="m.TransazioneRicorrente" class="ml-2 text-[11.5px] font-normal text-testo2"><i class="ph-bold ph-repeat" /> ogni mese</span>
                 </b>
-                <small class="block truncate text-[13px] text-testo2">{{ m.cat.Nome }}<template v-if="m.Contanti"> · contanti</template></small>
+                <small class="block truncate text-[13px] text-testo2">{{ sottoRiga(m) }}</small>
               </span>
-              <span class="num font-medium whitespace-nowrap" :class="m.tipo === 'entrata' ? 'text-fg-positivo' : 'text-fg-negativo'">
-                {{ eur(m.tipo === "entrata" ? m.importo : -m.importo, { segno: true }) }}
+              <span class="num font-medium whitespace-nowrap" :class="m.tipo === 'entrata' ? 'text-fg-positivo' : m.tipo === 'uscita' ? 'text-fg-negativo' : 'text-testo2'">
+                {{ m.tipo === "entrata" || m.tipo === "uscita" ? eur(m.tipo === "entrata" ? m.importo : -m.importo, { segno: true }) : eur(m.importo) }}
               </span>
               <i class="ph-bold ph-caret-right -translate-x-1 text-[15px] text-testo3 opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" :class="{ 'translate-x-0 text-fg-accento! opacity-100': props.id === m.documentId }" />
             </button>
