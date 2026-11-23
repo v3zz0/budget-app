@@ -14,7 +14,7 @@
 //
 //   utente    → wallet (e quindi tutto quello sotto)
 //   wallet    → categorie → transazioni
-//             → salvadanaio
+//             → salvadanaio (vecchio) e cartelle del salvadanaio → loro movimenti
 //   categoria → transazioni, consigli
 //
 // `salvadanaio.delete` resta disabilitato per il CLIENT (lo storico non si
@@ -26,6 +26,8 @@ const CATEGORIA = 'api::categorie.categorie';
 const TRANSAZIONE = 'api::transazioni.transazioni';
 const SALVADANAIO = 'api::salvadanaio.salvadanaio';
 const CONSIGLIO = 'api::consiglio.consiglio';
+const CARTELLA = 'api::cartella.cartella';
+const MOVIMENTO = 'api::movimento-salvadanaio.movimento-salvadanaio';
 const DISPOSITIVO = 'api::notifica-dispositivo.notifica-dispositivo';
 
 // Righe per giro: tiene corte le query anche con migliaia di transazioni
@@ -56,6 +58,8 @@ async function eliminaFigliDiWallet(strapi, walletId) {
   await eliminaFigliDiCategorie(strapi, ids);
   await eliminaDove(strapi, CATEGORIA, { wallet: { id: walletId } });
   await eliminaDove(strapi, SALVADANAIO, { wallet: { id: walletId } });
+  await eliminaDove(strapi, MOVIMENTO, { salvadanaio: { wallet: { id: walletId } } });
+  await eliminaDove(strapi, CARTELLA, { wallet: { id: walletId } });
 }
 
 const FIGLI = { [WALLET]: eliminaFigliDiWallet, [CATEGORIA]: (strapi, id) => eliminaFigliDiCategorie(strapi, [id]) };

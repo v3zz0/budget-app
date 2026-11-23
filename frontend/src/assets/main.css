@@ -285,7 +285,7 @@ body {
   color: var(--color-testo) !important;
 }
 .p-select-option.p-select-option-selected { background: var(--color-campo) !important; color: var(--color-testo) !important; }
-.p-toast-message { border-radius: 999px !important; }
+.p-toast-message { border-radius: 24px !important; }
 /* Toast come nel mockup: pillola crema, arancio per errori e avvisi */
 .p-toast-message {
   background: var(--color-crema) !important;

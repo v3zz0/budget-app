@@ -55,7 +55,11 @@ module.exports = createCoreController(UID, ({ strapi }) => ({
       ...(ctx.request.body.data || {}),
       users_permissions_user: userId,
     };
-    return super.create(ctx);
+    const risposta = await super.create(ctx);
+    // Ogni portafoglio nasce col suo salvadanaio "Risparmi mensili"
+    const creato = await strapi.db.query(UID).findOne({ where: { documentId: risposta.data.documentId } });
+    if (creato) await require('../../../salvadanai').assicuraStandard(strapi, creato.id);
+    return risposta;
   },
 
   async update(ctx) {

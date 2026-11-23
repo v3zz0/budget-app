@@ -1,0 +1,21 @@
+{
+  "kind": "collectionType",
+  "collectionName": "salvadanai",
+  "info": {
+    "singularName": "cartella",
+    "pluralName": "cartelle",
+    "displayName": "Salvadanaio (cartella)",
+    "description": "Cartelle del salvadanaio: 'Risparmi mensili' (Standard, una per wallet) e i salvadanai personali"
+  },
+  "options": { "draftAndPublish": false },
+  "pluginOptions": {},
+  "attributes": {
+    "Nome": { "type": "string", "required": true, "maxLength": 40 },
+    "Emoji": { "type": "string", "maxLength": 16 },
+    "Colore": { "type": "enumeration", "enum": ["argilla", "nebbia", "kaki", "pietra", "lilla"], "default": "pietra" },
+    "Obiettivo": { "type": "decimal" },
+    "Standard": { "type": "boolean", "default": false },
+    "wallet": { "type": "relation", "relation": "manyToOne", "target": "api::wallet.wallet" },
+    "movimenti": { "type": "relation", "relation": "oneToMany", "target": "api::movimento-salvadanaio.movimento-salvadanaio", "mappedBy": "salvadanaio" }
+  }
+}

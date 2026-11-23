@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  primoDelMese, ultimoDelMese, spostaMese, dataIt, euro, proiezioneFineMese, avanzato, chiaveMese,
+  primoDelMese, ultimoDelMese, spostaMese, dataIt, euro, proiezioneFineMese, chiaveMese,
 } from "./budget.js";
 
 test("chiavi mese", () => {
@@ -24,13 +24,6 @@ test("formati", () => {
   assert.equal(euro(12.5, 2), "€12.50");
 });
 
-test("avanzato: solo se positivo e con un budget", () => {
-  assert.equal(avanzato({ budgetAllocato: 500, speso: 420 }), 80);
-  assert.equal(avanzato({ budgetAllocato: 500, speso: 520 }), null);
-  assert.equal(avanzato({ budgetAllocato: 0, speso: 0 }), null);
-  assert.equal(avanzato(undefined), null);
-  assert.equal(chiaveMese(2026, 8), "2026-08");
-});
 
 test("proiezione", () => {
   const meseCorrente = { anno: 2026, mese: 9 }; // 30 giorni

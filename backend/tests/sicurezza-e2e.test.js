@@ -18,6 +18,8 @@
 //      consigli contano solo le uscite
 //  11. foto profilo ridotta sul server, avatar non scrivibile da PUT
 //  12. ricorrenti in pausa: il cron non le registra (anche i template NULL sì)
+//  13. salvadanaio a cartelle: migrazione, versa, sposta, saldi mai sotto
+//      zero (verificati dal server), cascata, accesso solo al proprio wallet
 //
 // Richiede un driver SQLite che NON è una dipendenza del progetto (in
 // produzione si usa MySQL e non serve compilarlo):
@@ -82,7 +84,7 @@ async function main() {
   try {
     assert.strictEqual(app.db.config.connection.client, 'sqlite', 'ABORT: il database non è sqlite');
     await prova(app, porta);
-    console.log('OK: sicurezza multi-utente (entrate, foto profilo, ricorrenti in pausa, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
+    console.log('OK: sicurezza multi-utente (salvadanaio, entrate, foto profilo, ricorrenti in pausa, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
   } finally {
     await app.destroy();
     fs.rmSync(appDir, { recursive: true, force: true });
@@ -310,7 +312,7 @@ async function prova(app, porta) {
 
   // ── 10. Entrate: lo speso conta solo le uscite ─────────────────────────────
   {
-    const { spesoDelPeriodo } = require(path.join(radice, 'src/speso'));
+    const { entrateMenoUscite } = require(path.join(radice, 'src/salvadanai'));
     const motore = require(path.join(radice, 'src/api/consiglio/services/motore-consigli'))();
     const we = await D(W).create({ data: { Nome: 'WEntrate', Budget: 1000, users_permissions_user: ada.documentId } });
     const spesa = await D(C).create({ data: { Nome: 'Spesa', Budget_categoria: 100, wallet: we.documentId } });
@@ -318,7 +320,8 @@ async function prova(app, porta) {
     const stip = await D(C).create({ data: { Nome: 'Stipendio', Budget_categoria: 100, Tipo: 'entrata', wallet: we.documentId } });
     await D(T).create({ data: { Descrizione: 'pane', Importo: 30, Data: '2026-11-03', categorie: spesa.documentId } });
     await D(T).create({ data: { Descrizione: 'stipendio', Importo: 2000, Data: '2026-11-27', categorie: stip.documentId } });
-    assert.strictEqual(await spesoDelPeriodo(app, we.documentId, '2026-11-01', '2026-11-30'), 30, 'l\'entrata non è una spesa');
+    const weId = (await q(W).findOne({ where: { documentId: we.documentId } })).id;
+    assert.strictEqual(await entrateMenoUscite(app, weId, '2026-11'), 1970, 'entrate − uscite: l\'entrata non è una spesa');
     // Consigli: 6 mesi di "stipendio" oltre il budget non devono proporre di alzarlo.
     for (const m of ['05', '06', '07', '08', '09', '10']) {
       await D(T).create({ data: { Descrizione: 'stip', Importo: 2000, Data: `2026-${m}-27`, categorie: stip.documentId } });
@@ -372,6 +375,72 @@ async function prova(app, porta) {
     const nov = await D(T).findMany({ filters: { categorie: { documentId: cr.documentId }, Data: '2026-11-05' } });
     assert.deepStrictEqual(nov.map((t) => t.Descrizione), ['Palestra'], 'la ricorrente in pausa non si registra, quella NULL sì');
     await D(W).delete({ documentId: wr.documentId });
+  }
+
+  // ── 13. Salvadanaio a cartelle ─────────────────────────────────────────────
+  {
+    const sv = require(path.join(radice, 'src/salvadanai'));
+    const CART = 'api::cartella.cartella', MOV = 'api::movimento-salvadanaio.movimento-salvadanaio';
+    // Wallet creato dall'API: nasce con la sua cartella standard
+    r = await http('POST', '/api/wallets', jAda, { data: { Nome: 'WS', Budget: 1000 } });
+    assert.strictEqual(r.status, 201, `wallet: ${JSON.stringify(r.body?.error)}`);
+    const ws = r.body.data.documentId;
+    const wsId = (await q(W).findOne({ where: { documentId: ws } })).id;
+    assert.strictEqual(await conta(CART, { wallet: { id: wsId }, Standard: true }), 1, 'cartella standard creata col wallet');
+    // Vecchio salvadanaio: due mesi risparmiati → migrati una volta sola
+    await D(S).create({ data: { mese: '2026-09-01', budgetAllocato: 1000, speso: 200, risparmiato: 500, wallet: ws } });
+    await D(S).create({ data: { mese: '2026-10-01', budgetAllocato: 1000, speso: 100, risparmiato: 1171, wallet: ws } });
+    await sv.migraVecchio(app);
+    await sv.migraVecchio(app);
+    const st = (wallet = ws, jwt = jAda) => http('GET', `/api/salvadanai?wallet=${wallet}`, jwt);
+    r = await st();
+    assert.strictEqual(r.status, 200, `stato: ${JSON.stringify(r.body?.error)}`);
+    assert.deepStrictEqual(r.body.mesi.map((m) => [m.mese, m.disponibile]), [['2026-10', 1171], ['2026-09', 500]], 'migrazione idempotente');
+    // Nuovo salvadanaio, versamento di soldi nuovi, spostamento da ottobre
+    r = await http('POST', '/api/salvadanai', jAda, { wallet: ws, nome: 'Macchina nuova', emoji: '🚗', colore: 'argilla', obiettivo: 8000 });
+    const auto = r.body.cartelle.find((c) => c.nome === 'Macchina nuova').id;
+    r = await http('POST', `/api/salvadanai/${auto}/movimenti`, jAda, { wallet: ws, importo: 200, nota: 'regalo' });
+    assert.strictEqual(r.status, 200);
+    r = await http('POST', `/api/salvadanai/${auto}/movimenti`, jAda, { wallet: ws, importo: 800, daMese: '2026-10' });
+    assert.strictEqual(r.status, 200, `sposta: ${JSON.stringify(r.body?.error)}`);
+    const tot = (b) => b.cartelle.reduce((x, c) => x + c.saldo, 0);
+    assert.strictEqual(r.body.cartelle.find((c) => c.id === auto).saldo, 1000);
+    assert.strictEqual(r.body.mesi[0].disponibile, 371, 'ottobre: €371 di €1.171');
+    assert.deepStrictEqual(r.body.mesi[0].spostati.map((x) => [x.importo, x.verso]), [[800, 'Macchina nuova']]);
+    assert.strictEqual(tot(r.body), 1671 + 200, 'lo spostamento non cambia il totale, i soldi nuovi sì');
+    // Regole verificate dal server
+    assert.strictEqual((await http('POST', `/api/salvadanai/${auto}/movimenti`, jAda, { wallet: ws, importo: -1000.01 })).status, 400, 'prelievo oltre il saldo');
+    assert.strictEqual((await http('POST', `/api/salvadanai/${auto}/movimenti`, jAda, { wallet: ws, importo: 372, daMese: '2026-10' })).status, 400, 'oltre il disponibile del mese');
+    assert.strictEqual((await http('PUT', '/api/salvadanai/risparmio', jAda, { wallet: ws, mese: '2026-10', importo: 700 })).status, 400, 'risparmio sotto lo spostato');
+    assert.strictEqual((await http('POST', `/api/salvadanai/${auto}/movimenti`, jAda, { wallet: ws, importo: 0 })).status, 400);
+    const std = r.body.cartelle.find((c) => c.standard).id;
+    assert.strictEqual((await http('DELETE', `/api/salvadanai/${std}?wallet=${ws}`, jAda)).status, 400, 'la standard non si elimina');
+    r = await http('POST', `/api/salvadanai/${auto}/movimenti`, jAda, { wallet: ws, importo: -1000 });
+    assert.strictEqual(r.status, 200, 'prelevare tutto si può');
+    assert.strictEqual(r.body.cartelle.find((c) => c.id === auto).saldo, 0);
+    // Un altro utente: niente, né con il suo wallet né col proprio
+    assert.strictEqual((await st(ws, jBob)).status, 404);
+    assert.strictEqual((await http('POST', `/api/salvadanai/${auto}/movimenti`, jBob, { wallet: ws, importo: 5 })).status, 404);
+    const wb = (await http('POST', '/api/wallets', jBob, { data: { Nome: 'Bob', Budget: 1 } })).body.data.documentId;
+    assert.strictEqual((await http('POST', `/api/salvadanai/${auto}/movimenti`, jBob, { wallet: wb, importo: 5 })).status, 404, 'cartella di un altro wallet');
+    assert.strictEqual((await http('DELETE', `/api/salvadanai/${auto}?wallet=${wb}`, jBob)).status, 404);
+    // Eliminare il salvadanaio riporta nei mesi i soldi spostati
+    r = await http('DELETE', `/api/salvadanai/${auto}?wallet=${ws}`, jAda);
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.body.mesi[0].disponibile, 1171, 'i soldi tornano a ottobre');
+    // Chiusura del mese: senza risparmio inserito vale entrate − uscite
+    const cs = await D(C).create({ data: { Nome: 'Stip', Tipo: 'entrata', wallet: ws } });
+    await D(T).create({ data: { Descrizione: 's', Importo: 1500, Data: '2026-08-27', categorie: cs.documentId } });
+    await sv.chiudiMese(app, '2026-08');
+    await sv.chiudiMese(app, '2026-08');
+    assert.strictEqual((await st()).body.mesi.find((m) => m.mese === '2026-08').disponibile, 1500);
+    // Cascata: via il wallet, via cartelle e movimenti
+    const prima = { c: await conta(CART), m: await conta(MOV) };
+    await D(W).delete({ documentId: ws });
+    assert.strictEqual(await conta(CART, { wallet: null }), 0);
+    assert.strictEqual(await conta(MOV, { salvadanaio: null }), 0, 'nessun movimento orfano');
+    assert.ok((await conta(CART)) < prima.c && (await conta(MOV)) < prima.m);
+    await D(W).delete({ documentId: wb });
   }
 
   // ── 6. Accesso chiuso: gli account li crea solo l'amministratore ───────────

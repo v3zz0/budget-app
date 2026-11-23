@@ -4,8 +4,8 @@ const cascata = require("./cascata");
 const permessi = require("./permessi");
 const chiaviAi = require("./chiavi-ai");
 const notifiche = require("./notifiche/pianifica");
-const { spesoDelPeriodo } = require("./speso");
 const { materializzaRicorrenti } = require("./ricorrenti");
+const salvadanai = require("./salvadanai");
 
 // Il testo del consiglio lo scrive l'LLM, ma i numeri glieli passiamo noi già
 // calcolati: il modello non deve MAI decidere un importo. Se non risponde o non
@@ -35,15 +35,6 @@ async function testoConsiglio(llm, p, strapi) {
   }
 }
 
-// "2026-09-01" per (2026, 9). Costruita a mano e non con toISOString(): un
-// `new Date(y, m, 1).toISOString()` restituisce il giorno PRIMA appena il
-// container ha un fuso a est di Greenwich. Oggi i container girano in UTC e
-// funziona per caso; basta aggiungere TZ=Europe/Rome al compose per spostare
-// tutte le chiavi mese di un giorno e rompere il salvadanaio in silenzio.
-function primoDelMese(anno, mese) {
-  return `${anno}-${String(mese).padStart(2, "0")}-01`;
-}
-
 module.exports = {
   register({ strapi }) {
     // Eliminare un portafoglio o una categoria elimina anche i loro figli.
@@ -57,80 +48,18 @@ module.exports = {
       //  1. si CHIUDE il mese che finisce, scrivendoci quanto è stato speso
       //     davvero — `risparmiato` non si tocca mai, quello lo decide l'utente;
       //  2. si APRE il mese successivo, a zero, pronto da compilare.
+      // Ultimo giorno del mese alle 23: chiude il mese nei "Risparmi mensili"
+      // di ogni wallet. Se l'utente non ha inserito il risparmio, vale
+      // entrate − uscite (se positivo). Il vecchio salvadanaio non si scrive
+      // più: i suoi dati li ha già portati qui la migrazione (src/salvadanai.js).
       chiudiEApriMese: {
         task: async ({ strapi }) => {
-          strapi.log.info("Cron chiudiEApriMese avviato");
-
-          // Verifica che sia davvero l'ultimo giorno del mese
           const oggi = new Date();
           const domani = new Date(oggi);
           domani.setDate(domani.getDate() + 1);
           if (domani.getDate() !== 1) return;
-
-          // Mese che sta finendo e mese che si apre
-          const meseCorrenteISO = primoDelMese(oggi.getFullYear(), oggi.getMonth() + 1);
-          const ultimoGiorno = `${meseCorrenteISO.slice(0, 8)}${String(oggi.getDate()).padStart(2, "0")}`;
-          const meseISO = primoDelMese(domani.getFullYear(), domani.getMonth() + 1);
-
-          const wallets = await strapi.entityService.findMany("api::wallet.wallet");
-
-          for (const wallet of wallets) {
-            // ── 1. Chiusura del mese che finisce ──────────────────────────
-            const speso = await spesoDelPeriodo(
-              strapi,
-              wallet.documentId,
-              meseCorrenteISO,
-              ultimoGiorno,
-            );
-            const daChiudere = await strapi.entityService.findMany(
-              "api::salvadanaio.salvadanaio",
-              { filters: { wallet: wallet.id, mese: meseCorrenteISO } },
-            );
-
-            if (daChiudere.length > 0) {
-              await strapi.entityService.update(
-                "api::salvadanaio.salvadanaio",
-                daChiudere[0].id,
-                { data: { speso } },
-              );
-            } else {
-              // Il mese non era mai stato aperto (primo giro, o wallet creato
-              // a metà mese): lo si scrive comunque, o quel mese sparisce
-              // dallo storico.
-              await strapi.entityService.create("api::salvadanaio.salvadanaio", {
-                data: {
-                  mese: meseCorrenteISO,
-                  budgetAllocato: wallet.Budget || 0,
-                  speso,
-                  risparmiato: 0,
-                  wallet: wallet.id,
-                },
-              });
-            }
-            strapi.log.info(
-              `Salvadanaio chiuso per wallet "${wallet.Nome}" - Mese ${meseCorrenteISO} (speso=${speso})`,
-            );
-
-            // ── 2. Apertura del mese successivo ───────────────────────────
-            const esistente = await strapi.entityService.findMany(
-              "api::salvadanaio.salvadanaio",
-              { filters: { wallet: wallet.id, mese: meseISO } },
-            );
-            if (esistente.length > 0) continue;
-
-            await strapi.entityService.create("api::salvadanaio.salvadanaio", {
-              data: {
-                mese: meseISO,
-                budgetAllocato: wallet.Budget || 0,
-                speso: 0,
-                risparmiato: 0,
-                wallet: wallet.id,
-              },
-            });
-            strapi.log.info(
-              `Record salvadanaio creato per wallet "${wallet.Nome}" - Mese ${meseISO} (risparmiato=0)`,
-            );
-          }
+          strapi.log.info("Cron chiudiEApriMese avviato");
+          await salvadanai.chiudiMese(strapi, salvadanai.meseDi(oggi));
         },
         options: { rule: "0 23 28-31 * *" },
       },
@@ -241,6 +170,13 @@ module.exports = {
       await strapi.db.query("api::categorie.categorie").updateMany({ where: { Nascosta: null }, data: { Nascosta: false } });
     } catch (e) {
       strapi.log.error(`Categorie: Tipo di default non applicato (${e.message})`);
+    }
+    // Salvadanaio a cartelle: la cartella standard per ogni wallet e i
+    // risparmi del vecchio salvadanaio portati nei suoi movimenti (idempotente).
+    try {
+      await salvadanai.migraVecchio(strapi);
+    } catch (e) {
+      strapi.log.error(`Salvadanaio: migrazione non riuscita (${e.message})`);
     }
     // Cifra le chiavi AI rimaste in chiaro dalle versioni precedenti.
     try {
