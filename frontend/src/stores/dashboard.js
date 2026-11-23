@@ -19,6 +19,7 @@ export const useDashboardStore = defineStore("dashboard", {
     mese: meseCorrente(),
     walletId: null,
     categorie: [], // ognuna con le sole transazioni del mese
+    precedente: [], // lo stesso per il mese prima (variazioni nelle card della Home)
     loading: false,
     errore: null,
   }),
@@ -54,8 +55,11 @@ export const useDashboardStore = defineStore("dashboard", {
       this.errore = null;
       const n = ++ultima;
       try {
-        const categorie = await caricaMese(walletId, this.mese);
-        if (n === ultima) this.categorie = categorie;
+        const [categorie, precedente] = await Promise.all([
+          caricaMese(walletId, this.mese),
+          caricaMese(walletId, spostaMese(this.mese, -1)),
+        ]);
+        if (n === ultima) Object.assign(this, { categorie, precedente });
       } catch (e) {
         if (n === ultima) this.errore = erroreLeggibile(e);
       } finally {

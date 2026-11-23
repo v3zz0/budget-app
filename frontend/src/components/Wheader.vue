@@ -69,7 +69,7 @@ function esci() {
 </script>
 
 <template>
-  <header class="mx-auto flex max-w-[1200px] items-center gap-2 px-4 pt-4 sm:gap-3 sm:px-6 sm:pt-6">
+  <header class="mx-auto flex max-w-[1200px] items-center gap-1.5 px-4 pt-4 sm:gap-3 sm:px-6 sm:pt-6">
     <router-link to="/" class="grid h-10 w-10 flex-none place-items-center rounded-full bg-card" aria-label="Budget, home">
       <img src="/logo.svg" alt="" class="h-[22px] w-[22px]" />
     </router-link>
@@ -147,11 +147,11 @@ function esci() {
     </router-link>
     <router-link
       to="/impostazioni#profilo"
-      class="grid h-11 w-11 flex-none place-items-center rounded-full hover:ring-2 hover:ring-bordo-forte max-[380px]:hidden"
+      class="grid h-11 w-11 flex-none place-items-center rounded-full max-[380px]:h-[38px] max-[380px]:w-[38px] hover:ring-2 hover:ring-bordo-forte"
       aria-label="Il tuo profilo"
       title="Il tuo profilo"
     >
-      <Avatar :p="io" :size="40" />
+      <Avatar :p="io" :size="40" class="max-[380px]:h-[38px]! max-[380px]:w-[38px]!" />
     </router-link>
     <button class="circle-btn" aria-label="Esci" title="Esci" @click="esci">
       <i class="ph-bold ph-sign-out" />
@@ -178,6 +178,12 @@ function esci() {
 </template>
 
 <style scoped>
+/* Telefoni stretti: i cerchi si restringono un po' e la pillola del
+   portafoglio accorcia il nome con i puntini (progetto.md §13) */
+@media (max-width: 380px) {
+  header :deep(.circle-btn) { width: 38px; height: 38px; font-size: 18px; }
+  header > a:first-child { width: 36px; height: 36px; }
+}
 /* Colori fissi della pillola: è scura anche di giorno (progetto.md §14) */
 .dock-voce {
   height: 52px; min-width: 52px; padding: 0 15px; border-radius: 999px;

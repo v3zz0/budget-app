@@ -1,25 +1,24 @@
 <script setup>
-import { computed, onMounted, reactive, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { useConsigliStore } from "@/stores/consigli.js";
-import { useDashboardStore, somma } from "@/stores/dashboard.js";
+import { useDashboardStore } from "@/stores/dashboard.js";
 import { useWalletStore } from "@/stores/wallet.js";
-import { eliminaTransazione } from "@/services/transazioni.js";
 import { creaWallet } from "@/services/impostazioni.js";
 import { erroreLeggibile } from "@/services/api.js";
-import { coloreImporto, dataIt, euro, nomeMese } from "@/utils/budget.js";
+import { nomeMese, spostaMese } from "@/utils/budget.js";
+import { eur } from "@/utils/formato.js";
+import { appiattisci, totali } from "@/utils/movimenti.js";
+import { budgetCategorie, fette, variazione } from "@/utils/home.js";
+import Ciambella from "@/components/Ciambella.vue";
 
 const router = useRouter();
 const route = useRoute();
-const confirm = useConfirm();
 const toast = useToast();
 const dashboard = useDashboardStore();
 const walletStore = useWalletStore();
 const consigli = useConsigliStore();
-
-const espanse = reactive(new Set());
 
 // Primo avvio: l'account lo crea l'amministratore e parte senza nulla.
 const primo = reactive({ nome: "", budget: null, salvando: false });
@@ -30,6 +29,8 @@ async function creaPrimo() {
     await walletStore.carica();
     const w = walletStore.wallets.find((x) => x.documentId === creato.documentId);
     if (w) walletStore.setSelectedWallet(w);
+    // Subito alle categorie: senza non si registra niente
+    router.push("/impostazioni#categorie");
   } catch (e) {
     toast.add({ severity: "error", summary: "Portafoglio non creato", detail: erroreLeggibile(e), life: 4000 });
   } finally {
@@ -39,222 +40,245 @@ async function creaPrimo() {
 
 // I consigli li genera il cron a fine mese: qui si leggono e basta.
 onMounted(() => consigli.carica());
-
-// Carica al primo ingresso e a ogni cambio di portafoglio. Il mese lo
-// ricarica dal server a ogni cambio (cambiaMese), non si filtra sul client.
 watch(() => walletStore.walletId, (id) => id && dashboard.carica(id), { immediate: true });
 
+// Link di una notifica di sforamento: ?portafoglio=&categoria=&mese=AAAA-MM
+const evidenzia = ref(null);
 watch([() => route.query, () => walletStore.caricati], ([query, caricati]) => {
-  if (!caricati || typeof query.portafoglio !== "string" || typeof query.categoria !== "string" ||
-      typeof query.mese !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(query.mese)) return;
+  if (!caricati || typeof query.portafoglio !== "string" || typeof query.mese !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(query.mese)) return;
   const wallet = walletStore.wallets.find((w) => w.documentId === query.portafoglio);
   if (!wallet) return;
   const [anno, mese] = query.mese.split("-").map(Number);
-  const meseCambiato = dashboard.mese.anno !== anno || dashboard.mese.mese !== mese;
+  const cambiato = dashboard.mese.anno !== anno || dashboard.mese.mese !== mese;
   dashboard.mese = { anno, mese };
-  espanse.add(query.categoria);
+  evidenzia.value = typeof query.categoria === "string" ? query.categoria : null;
   if (walletStore.walletId !== wallet.documentId) walletStore.setSelectedWallet(wallet);
-  else if (meseCambiato) dashboard.carica(wallet.documentId);
+  else if (cambiato) dashboard.carica(wallet.documentId);
 }, { immediate: true });
 
-const righe = computed(() =>
-  dashboard.categorie.map((c) => {
-    const budget = c.Budget_categoria || 0;
-    const spesi = somma(c.transazionis);
-    const quota = budget > 0 ? spesi / budget : 0;
+const nome = computed(() => nomeMese(dashboard.mese.mese));
+const movimenti = computed(() => appiattisci(dashboard.categorie));
+const tot = computed(() => totali(movimenti.value));
+const prima = computed(() => totali(appiattisci(dashboard.precedente)));
+const mesePrima = computed(() => spostaMese(dashboard.mese, -1).mese);
+const spesoPct = computed(() => (tot.value.entrate ? Math.min(100, Math.round((tot.value.uscite / tot.value.entrate) * 100)) : tot.value.uscite ? 100 : 0));
+const tasso = computed(() => (tot.value.entrate ? Math.round((tot.value.saldo / tot.value.entrate) * 100) : 0));
+
+// Grafico: Totale (entrate vs uscite) o per categoria
+const vista = ref("totale");
+const grafico = computed(() => {
+  const t = tot.value;
+  if (vista.value === "totale") {
     return {
-      ...c,
-      budget,
-      spesi,
-      rimanente: budget - spesi,
-      riempimento: Math.min(quota, 1) * 100,
-      // quanto si è sforato, in frazione di budget: la barra da sola è
-      // clampata, e al 110% e al 300% sarebbe identica
-      oltre: Math.min(Math.max(quota - 1, 0), 1),
+      fette: [
+        { id: "e", nome: "Entrate", valore: t.entrate, colore: "var(--color-salvia)" },
+        { id: "u", nome: "Uscite", valore: t.uscite, colore: "var(--color-arancio)" },
+      ].filter((f) => f.valore > 0),
+      centro: { etichetta: "Saldo", valore: t.saldo, sotto: t.entrate ? `speso il ${spesoPct.value}%` : "" },
     };
-  }),
-);
-
-watch(() => righe.value.find((c) => c.documentId === route.query.categoria)?.documentId, (id) => {
-  if (id) document.getElementById(`categoria-${id}`)?.scrollIntoView({ block: "nearest" });
-}, { flush: "post" });
-
-const toggle = (id) => (espanse.has(id) ? espanse.delete(id) : espanse.add(id));
-
-function elimina(t) {
-  confirm.require({
-    header: "Elimina transazione",
-    message: `Eliminare "${t.Descrizione || "senza descrizione"}" (${euro(t.Importo, 2)})?`,
-    acceptLabel: "Elimina",
-    rejectLabel: "Annulla",
-    acceptProps: { severity: "danger" },
-    rejectProps: { severity: "secondary", text: true },
-    accept: async () => {
-      try {
-        await eliminaTransazione(t.documentId);
-        await dashboard.carica();
-      } catch (e) {
-        toast.add({ severity: "error", summary: "Errore", detail: erroreLeggibile(e), life: 4000 });
-      }
+  }
+  const tipo = vista.value === "entrate" ? "entrata" : "uscita";
+  const f = fette(dashboard.categorie, tipo);
+  return {
+    fette: f,
+    centro: {
+      etichetta: tipo === "entrata" ? "Entrate" : "Uscite",
+      valore: tipo === "entrata" ? t.entrate : t.uscite,
+      sotto: `${f.length} ${f.length === 1 ? "categoria" : "categorie"}`,
     },
-  });
-}
+  };
+});
+
+const ultimi = computed(() => movimenti.value.filter((m) => m.tipo === "entrata" || m.tipo === "uscita").slice(0, 6));
+const budget = computed(() => budgetCategorie(dashboard.categorie));
+const breve = (d) => `${Number(d.slice(8, 10))} ${nome.value.slice(0, 3).toLowerCase()}`;
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 px-4 pt-6">
-    <!-- Testata: eyebrow + navigatore mese (non nel primo avvio: senza portafoglio non ha senso) -->
-    <div v-if="walletStore.wallets.length || !walletStore.caricati" class="flex items-center justify-between gap-2">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-testo2">
-          {{ walletStore.selectedWallet?.Nome || "Portafoglio" }}
-        </p>
-        <div class="mt-1 flex items-center gap-1">
-          <Button icon="pi pi-chevron-left" text rounded severity="secondary" aria-label="Mese precedente" @click="dashboard.cambiaMese(-1)" />
-          <h1 class="min-w-44 text-center text-2xl font-bold text-testo">
-            {{ nomeMese(dashboard.mese.mese) }} {{ dashboard.mese.anno }}
-          </h1>
-          <Button icon="pi pi-chevron-right" text rounded severity="secondary" aria-label="Mese successivo" @click="dashboard.cambiaMese(1)" />
-        </div>
-      </div>
-      <div class="flex items-center">
-        <!-- Campanella dei consigli: il pallino compare solo se c'è qualcosa di nuovo -->
-        <span class="relative">
-          <Button
-            :icon="consigli.nonLetti ? 'pi pi-bell text-accent' : 'pi pi-bell'"
-            text
-            rounded
-            severity="secondary"
-            aria-label="Consigli sul budget"
-            @click="router.push('/consigli')"
-          />
-          <span
-            v-if="consigli.nonLetti"
-            class="pointer-events-none absolute -right-0.5 top-0 grid min-w-4 place-items-center rounded-full bg-errore px-1 text-[10px] font-bold text-fondo"
-          >{{ consigli.nonLetti }}</span>
-        </span>
-        <Button icon="pi pi-chart-bar" text rounded severity="secondary" aria-label="Riepilogo anno" @click="router.push('/anno')" />
-      </div>
-    </div>
-
+  <div>
     <!-- Primo avvio -->
-    <section v-if="walletStore.caricati && !walletStore.wallets.length" class="rounded-2xl border border-bordo bg-card p-5">
-      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-accent">Primo avvio</p>
-      <h2 class="mt-1 text-2xl font-bold text-testo">Iniziamo dal primo portafoglio</h2>
-      <p class="mt-2 text-sm text-testo2">
-        Un portafoglio raccoglie le spese e i budget di una parte della tua vita (per esempio la casa, o le spese
-        personali). Ne puoi creare altri in seguito da Impostazioni.
+    <section v-if="walletStore.caricati && !walletStore.wallets.length" class="blocco reveal mx-auto max-w-xl bg-crema">
+      <span class="chip">Primo avvio</span>
+      <h1 class="mt-5 text-[34px] leading-[1.05] font-medium tracking-[-0.04em]">Iniziamo dal primo portafoglio</h1>
+      <p class="mt-3 text-[15px]">
+        Un portafoglio raccoglie spese, entrate e budget di una parte della tua vita (la casa, le spese personali). Ne
+        puoi creare altri dalle Impostazioni.
       </p>
-      <form class="mt-4 flex flex-col gap-4" @submit.prevent="creaPrimo">
-        <div class="flex flex-col gap-2">
-          <label for="primo-nome" class="text-sm text-testo2">Nome</label>
-          <InputText id="primo-nome" v-model="primo.nome" placeholder="Casa" fluid />
+      <form class="mt-6 flex flex-col gap-4" @submit.prevent="creaPrimo">
+        <div>
+          <label for="primo-nome" class="mb-2 block text-sm font-semibold">Nome</label>
+          <input id="primo-nome" v-model="primo.nome" placeholder="Casa" class="h-[52px] w-full rounded-full bg-inchiostro-velo px-5 outline-none focus:shadow-[inset_0_0_0_2px_var(--color-inchiostro)]" />
         </div>
-        <div class="flex flex-col gap-2">
-          <label for="primo-budget" class="text-sm text-testo2">Budget mensile</label>
+        <div>
+          <label for="primo-budget" class="mb-2 block text-sm font-semibold">Budget mensile</label>
           <InputNumber v-model="primo.budget" inputId="primo-budget" mode="currency" currency="EUR" locale="it-IT" :min="0" fluid />
         </div>
-        <Button type="submit" label="Crea il portafoglio" :loading="primo.salvando" :disabled="!primo.nome.trim()" />
+        <button type="submit" class="pill-btn pill-btn--ink mt-2" :disabled="primo.salvando || !primo.nome.trim()">Crea il portafoglio</button>
       </form>
     </section>
 
-    <!-- I portafogli stanno ancora arrivando -->
-    <Skeleton v-else-if="!walletStore.selectedWallet" height="8rem" borderRadius="16px" />
-
-    <!-- Errore -->
-    <div v-else-if="dashboard.errore" class="rounded-xl border border-errore/40 bg-errore/15 p-4 text-errore-testo">
-      {{ dashboard.errore }}
-    </div>
-
-    <!-- Caricamento -->
-    <template v-else-if="dashboard.loading && !righe.length">
-      <div class="grid grid-cols-3 gap-2"><Skeleton v-for="i in 3" :key="i" height="4.5rem" borderRadius="12px" /></div>
-      <Skeleton v-for="i in 4" :key="i" height="5rem" borderRadius="12px" />
-    </template>
-
     <template v-else>
-      <!-- Tre card: Budget / Spesi / Rimanenti. Il rimanente porta il segno,
-           non solo il colore. -->
-      <div class="grid grid-cols-3 gap-2" :class="{ 'opacity-60': dashboard.loading }">
-        <div class="rounded-xl border border-bordo bg-card px-2 py-3 text-center">
-          <p class="text-[11px] text-testo2">Budget</p>
-          <p class="mt-1 text-base font-bold text-testo2">{{ euro(dashboard.totaleBudget) }}</p>
-        </div>
-        <div class="rounded-xl border border-bordo bg-card px-2 py-3 text-center">
-          <p class="text-[11px] text-testo2">Spesi</p>
-          <p class="mt-1 text-base font-bold text-testo">{{ euro(dashboard.totaleSpesi) }}</p>
-        </div>
-        <div class="rounded-xl border border-bordo bg-card px-2 py-3 text-center">
-          <p class="text-[11px] text-testo2">Rimanenti</p>
-          <p class="mt-1 text-base font-bold" :class="coloreImporto(dashboard.totaleRimanente)">
-            {{ euro(dashboard.totaleRimanente) }}
-          </p>
-        </div>
-      </div>
-
-      <!-- Proiezione: solo se il ritmo porta a sforare (i consigli di fine
-           mese arrivano a mese già chiuso) -->
-      <div v-if="dashboard.proiezionePreoccupante" class="flex gap-3 rounded-xl border border-avviso/40 bg-avviso/10 p-3">
-        <i class="pi pi-chart-line mt-0.5 text-avviso" />
+      <div class="mb-8 flex flex-wrap items-end justify-between gap-4 sm:mb-10">
         <div>
-          <p class="text-sm font-semibold text-testo">Di questo passo sfori</p>
-          <p class="text-xs text-testo2">
-            Chiuderesti il mese a {{ euro(dashboard.proiezione) }}, cioè
-            {{ euro(dashboard.proiezione - dashboard.totaleBudget) }} sopra il budget.
-          </p>
+          <div class="eyebrow">Riepilogo del mese</div>
+          <h1 class="display">{{ nome }} <span class="text-testo3">{{ dashboard.mese.anno }}</span></h1>
+        </div>
+        <div class="ml-auto flex flex-wrap justify-end gap-2">
+          <router-link to="/consigli" class="circle-btn relative" aria-label="Consigli sul budget" title="Consigli sul budget">
+            <i class="ph-bold ph-bell" />
+            <span v-if="consigli.nonLetti" class="absolute -top-0.5 -right-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-arancio px-1 text-[11px] font-bold text-inchiostro">{{ consigli.nonLetti }}</span>
+          </router-link>
+          <router-link to="/anno" class="circle-btn" aria-label="Riepilogo dell'anno" title="Riepilogo dell'anno"><i class="ph-bold ph-chart-bar" /></router-link>
+          <button class="circle-btn" aria-label="Mese precedente" @click="dashboard.cambiaMese(-1)"><i class="ph-bold ph-caret-left" /></button>
+          <button class="circle-btn" aria-label="Mese successivo" @click="dashboard.cambiaMese(1)"><i class="ph-bold ph-caret-right" /></button>
         </div>
       </div>
 
-      <!-- Portafoglio creato ma ancora senza categorie: è lì che si registrano le spese -->
-      <div v-if="!righe.length" class="flex flex-col items-center gap-3 rounded-2xl border border-bordo bg-card px-6 py-8 text-center">
-        <p class="font-semibold text-testo">Ora le categorie</p>
-        <p class="text-sm text-testo2">
-          Dividi il budget in categorie (spesa, bollette, auto…): le transazioni si registrano dentro una categoria.
-        </p>
-        <Button label="Aggiungi le categorie" icon="pi pi-plus" @click="router.push('/impostazioni/categorie')" />
-      </div>
+      <div v-if="dashboard.errore" class="box-errore mb-3">{{ dashboard.errore }}</div>
+      <Skeleton v-else-if="!walletStore.selectedWallet || (dashboard.loading && !dashboard.categorie.length)" height="22rem" borderRadius="28px" class="mb-3" />
 
-      <!-- Categorie espandibili -->
-      <div v-for="c in righe" :id="`categoria-${c.documentId}`" :key="c.documentId" class="rounded-xl border border-bordo bg-card">
-        <button
-          type="button"
-          class="w-full rounded-xl p-4 text-left"
-          :aria-expanded="espanse.has(c.documentId)"
-          @click="toggle(c.documentId)"
-        >
-          <div class="flex items-center gap-2">
-            <span v-if="c.icona" class="text-lg">{{ c.icona }}</span>
-            <span class="flex-1 font-semibold text-testo">{{ c.Nome }}</span>
-            <span class="text-sm text-testo2">{{ euro(c.spesi) }} / {{ euro(c.budget) }}</span>
-            <span class="text-sm font-semibold" :class="coloreImporto(c.rimanente)">{{ euro(c.rimanente) }}</span>
-            <i class="pi text-testo2" :class="espanse.has(c.documentId) ? 'pi-chevron-up' : 'pi-chevron-down'" />
-          </div>
-          <!-- Due segmenti quando si sfora: budget consumato + quanto oltre -->
-          <div class="mt-3 flex gap-[3px]">
-            <div class="h-1.5 overflow-hidden rounded bg-campo" style="flex: 100 1 0">
-              <div class="h-full" :class="c.rimanente < 0 ? 'bg-errore' : 'bg-positivo'" :style="{ width: c.riempimento + '%' }" />
+      <template v-else>
+        <!-- Numeri del mese -->
+        <section class="mb-3 grid grid-cols-12 gap-2 sm:gap-3" :class="{ 'opacity-60': dashboard.loading }" aria-label="Numeri del mese">
+          <article class="blocco reveal col-span-12 flex min-h-[148px] flex-col justify-between gap-6 bg-crema sm:p-8 min-[981px]:col-span-6 min-[981px]:row-span-2">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <span class="text-[15px] font-medium">Saldo di {{ nome.toLowerCase() }}</span>
+              <span class="chip whitespace-nowrap">{{ !tot.entrate && !tot.uscite ? "nessun movimento" : tot.saldo >= 0 ? "in attivo" : "in passivo" }}</span>
             </div>
-            <div v-if="c.oltre > 0" class="h-1.5 rounded bg-errore" :style="{ flex: `${Math.max(1, Math.round(c.oltre * 100))} 1 0` }" />
-          </div>
-        </button>
+            <div class="text-[clamp(56px,7.4vw,92px)] leading-none tracking-[-0.055em]"><Euro :v="tot.saldo" /></div>
+            <div class="flex flex-col gap-2.5">
+              <div class="bar h-2.5! bg-inchiostro-velo!" role="img" :aria-label="`Speso il ${spesoPct}% delle entrate`">
+                <span class="bg-inchiostro!" :style="{ width: `${spesoPct}%` }" />
+              </div>
+              <div class="flex justify-between text-[13.5px] font-medium"><span>Speso {{ spesoPct }}%</span><span>Resta {{ Math.max(0, 100 - spesoPct) }}%</span></div>
+            </div>
+          </article>
+          <article class="blocco reveal col-span-6 flex min-h-[148px] flex-col justify-between gap-6 bg-salvia sm:min-h-[176px] min-[981px]:col-span-3" style="--i: 1">
+            <div class="flex flex-wrap items-start justify-between gap-2"><span class="text-[15px] font-medium">Entrate</span><span class="chip whitespace-nowrap">{{ variazione(tot.entrate, prima.entrate, mesePrima) }}</span></div>
+            <div class="text-[clamp(20px,7vw,28px)] leading-none whitespace-nowrap sm:text-[40px]"><Euro :v="tot.entrate" /></div>
+          </article>
+          <article class="blocco reveal col-span-6 flex min-h-[148px] flex-col justify-between gap-6 bg-arancio sm:min-h-[176px] min-[981px]:col-span-3" style="--i: 2">
+            <div class="flex flex-wrap items-start justify-between gap-2"><span class="text-[15px] font-medium">Uscite</span><span class="chip whitespace-nowrap">{{ variazione(tot.uscite, prima.uscite, mesePrima) }}</span></div>
+            <div class="text-[clamp(20px,7vw,28px)] leading-none whitespace-nowrap sm:text-[40px]"><Euro :v="tot.uscite" /></div>
+          </article>
+          <article class="blocco reveal col-span-12 flex flex-col-reverse gap-5 bg-ardesia text-su-inchiostro sm:flex-row sm:items-end min-[981px]:col-span-6" style="--i: 3">
+            <div class="flex flex-1 flex-col justify-between gap-5 self-stretch">
+              <span class="text-[15px] font-medium">Tasso di risparmio</span>
+              <div>
+                <div class="bar bg-su-inchiostro/15!"><span class="bg-su-inchiostro!" :style="{ width: `${Math.max(0, Math.min(100, tasso))}%` }" /></div>
+                <small class="mt-2.5 block text-[13.5px] opacity-85">Quota delle entrate che resta a fine mese</small>
+              </div>
+            </div>
+            <div class="num text-[52px] leading-none tracking-[-0.05em] sm:ml-8 sm:text-[64px]">{{ tasso }}%</div>
+          </article>
+        </section>
 
-        <div v-if="espanse.has(c.documentId)" class="border-t border-bordo">
-          <p v-if="!c.transazionis.length" class="p-4 text-sm text-testo2">Nessuna transazione questo mese</p>
-          <div
-            v-for="t in c.transazionis"
-            :key="t.documentId"
-            class="flex items-center gap-3 px-4 py-2.5 hover:bg-campo/50"
+        <!-- Scorciatoie -->
+        <section class="mb-12 grid gap-2 sm:mb-16 sm:grid-cols-2 sm:gap-3" aria-label="Registra un movimento">
+          <router-link
+            v-for="a in [{ t: 'entrata', l: 'Aggiungi entrata', i: 'ph-plus', c: 'bg-salvia' }, { t: 'uscita', l: 'Aggiungi uscita', i: 'ph-minus', c: 'bg-arancio' }]"
+            :key="a.t"
+            :to="`/transazioni?tipo=${a.t}`"
+            class="group reveal flex h-[68px] items-center gap-4 rounded-full bg-card pr-6 pl-3 transition hover:bg-campo active:scale-[.985] sm:h-[76px]"
           >
-            <button type="button" class="flex-1 text-left" @click="router.push(`/transazioni/${t.documentId}`)">
-              <p class="text-sm text-testo">{{ t.Descrizione || "—" }}</p>
-              <p class="text-[11px] text-testo2">{{ dataIt(t.Data) }}</p>
-            </button>
-            <i v-if="t.TransazioneRicorrente" class="pi pi-replay text-xs text-testo2" title="Ricorrente" />
-            <span class="text-sm font-semibold text-testo">{{ euro(t.Importo, 2) }}</span>
-            <Button icon="pi pi-trash" severity="danger" text rounded size="small" aria-label="Elimina" @click="elimina(t)" />
-          </div>
+            <span class="grid h-[46px] w-[46px] flex-none place-items-center rounded-full text-[22px] text-inchiostro sm:h-[52px] sm:w-[52px]" :class="a.c"><i class="ph-bold" :class="a.i" /></span>
+            <b class="flex-1 text-[17px] font-semibold tracking-[-0.015em]">{{ a.l }}</b>
+            <i class="ph-bold ph-arrow-right text-lg text-testo3 transition group-hover:translate-x-[3px] group-hover:text-testo" />
+          </router-link>
+        </section>
+
+        <div class="mb-12 grid grid-cols-[minmax(0,1fr)] gap-3 sm:mb-16 min-[981px]:grid-cols-[7fr_5fr]">
+          <section class="panel reveal" aria-labelledby="t-grafico">
+            <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+              <h2 id="t-grafico" class="panel-title">Entrate e uscite</h2>
+              <div class="seg" role="group" aria-label="Vista del grafico">
+                <button :aria-pressed="vista === 'totale'" @click="vista = 'totale'">Totale</button>
+                <button :aria-pressed="vista === 'entrate'" @click="vista = 'entrate'">Entrate</button>
+                <button :aria-pressed="vista === 'uscite'" @click="vista = 'uscite'">Uscite</button>
+              </div>
+            </div>
+            <Ciambella :fette="grafico.fette" :centro="grafico.centro" />
+          </section>
+
+          <section class="panel reveal" aria-labelledby="t-mov">
+            <h2 id="t-mov" class="panel-title mb-6">Movimenti del mese</h2>
+            <div v-if="tot.entrate || tot.uscite" class="mb-4">
+              <div class="flex h-2 overflow-hidden rounded-full bg-bordo" role="img" :aria-label="`Uscite ${eur(tot.uscite)}, entrate ${eur(tot.entrate)}`">
+                <span class="bg-arancio" :style="{ width: `${(tot.uscite / (tot.uscite + tot.entrate)) * 100}%` }" />
+                <span class="bg-salvia" :style="{ width: `${(tot.entrate / (tot.uscite + tot.entrate)) * 100}%` }" />
+              </div>
+              <div class="mt-2 flex justify-between text-[13px] text-testo2"><span>Uscite <Euro :v="tot.uscite" /></span><span>Entrate <Euro :v="tot.entrate" /></span></div>
+            </div>
+            <p v-if="!ultimi.length" class="vuoto">Ancora nessun movimento.<br />Inizia da “Aggiungi uscita”.</p>
+            <router-link
+              v-for="(m, i) in ultimi"
+              :key="m.documentId"
+              :to="`/transazioni/${m.documentId}`"
+              class="flex items-center gap-3 py-3"
+              :class="{ 'border-t border-bordo': i }"
+            >
+              <span class="grid h-11 w-11 flex-none place-items-center rounded-full bg-campo text-[22px]"><Emoji :e="m.cat.icona || '🏷️'" /></span>
+              <span class="min-w-0 flex-1">
+                <b class="block truncate text-[15px] font-medium">{{ m.Descrizione || m.cat.Nome }}</b>
+                <small class="block truncate text-[13px] text-testo2">{{ breve(m.Data) }} · {{ m.cat.Nome }}</small>
+              </span>
+              <span class="num text-[15px] font-medium whitespace-nowrap" :class="m.tipo === 'entrata' ? 'text-fg-positivo' : 'text-fg-negativo'">
+                {{ eur(m.tipo === "entrata" ? m.importo : -m.importo, { segno: true }) }}
+              </span>
+            </router-link>
+            <router-link to="/transazioni" class="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-testo2 hover:text-testo">
+              Vedi tutte le transazioni <i class="ph-bold ph-arrow-right" />
+            </router-link>
+          </section>
         </div>
-      </div>
+
+        <!-- Budget per categoria -->
+        <section class="panel reveal" aria-labelledby="t-budget">
+          <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+            <h2 id="t-budget" class="panel-title">Budget per categoria</h2>
+            <p v-if="budget.voci.length" class="text-sm text-testo2">
+              Spesi <b class="num font-medium text-testo">{{ eur(budget.speso, { corto: true }) }}</b> su
+              <b class="num font-medium text-testo">{{ eur(budget.budget, { corto: true }) }}</b> ·
+              {{ budget.rimanente >= 0 ? "rimangono" : "oltre di" }}
+              <b class="num font-medium" :class="budget.rimanente >= 0 ? 'text-testo' : 'text-fg-avviso'">{{ eur(Math.abs(budget.rimanente), { corto: true }) }}</b>
+            </p>
+          </div>
+          <div v-if="dashboard.proiezionePreoccupante" class="mb-4 flex items-start gap-3 rounded-[14px] bg-fondo px-5 py-4 text-[13.5px]">
+            <i class="ph-bold ph-trend-up mt-px text-lg text-fg-avviso" />
+            <span>
+              <b class="font-medium">Di questo passo sfori:</b> chiuderesti il mese a {{ eur(dashboard.proiezione, { corto: true }) }},
+              {{ eur(dashboard.proiezione - dashboard.totaleBudget, { corto: true }) }} sopra il budget.
+            </span>
+          </div>
+          <p v-if="!budget.voci.length" class="vuoto">
+            Nessuna categoria di spesa con un budget.
+            <router-link to="/impostazioni#categorie" class="underline underline-offset-4">Impostalo nelle Categorie</router-link>.
+          </p>
+          <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
+            <article
+              v-for="v in budget.voci"
+              :id="`categoria-${v.id}`"
+              :key="v.id"
+              class="flex flex-col gap-5 rounded-[20px] p-5"
+              :class="[v.stato === 'sforato' ? 'bg-arancio text-inchiostro' : 'bg-campo', { 'ring-2 ring-anello': evidenzia === v.id }]"
+            >
+              <div class="flex items-center gap-3">
+                <span class="grid h-10 w-10 flex-none place-items-center rounded-full text-xl" :class="v.stato === 'sforato' ? 'bg-inchiostro-velo' : 'bg-card'"><Emoji :e="v.icona || '🏷️'" /></span>
+                <b class="min-w-0 flex-1 truncate text-[15px] font-medium">{{ v.nome }}</b>
+                <span v-if="v.stato === 'sforato'" class="chip">sforato</span>
+              </div>
+              <div class="flex items-baseline justify-between gap-2">
+                <strong class="num text-[28px] leading-none font-normal">{{ eur(v.rimanente, { corto: true }) }}</strong>
+                <small class="text-[13px]" :class="v.stato === 'sforato' ? '' : 'text-testo2'">{{ v.rimanente < 0 ? "oltre" : "rimasti di" }} {{ eur(v.budget, { corto: true }) }}</small>
+              </div>
+              <div class="bar h-1.5!" :class="{ 'bg-inchiostro-velo!': v.stato === 'sforato' }" role="img" :aria-label="`Speso ${eur(v.speso)} su ${eur(v.budget)}`">
+                <span :class="{ 'bg-arancio!': v.stato === 'vicino', 'bg-salvia!': v.stato === 'ok', 'bg-inchiostro!': v.stato === 'sforato' }" :style="{ width: `${v.percentuale}%` }" />
+              </div>
+              <p v-if="v.stato === 'sforato'" class="-mt-2 text-[13px] font-semibold">Sforato di {{ eur(-v.rimanente, { corto: true }) }}</p>
+            </article>
+          </div>
+        </section>
+      </template>
     </template>
   </div>
 </template>
