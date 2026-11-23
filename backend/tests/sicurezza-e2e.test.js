@@ -16,6 +16,8 @@
 //   9. la pulizia degli orfani (anteprima, eliminazione, wallet senza utente)
 //  10. entrate: Tipo di default, normalizzazione dei vecchi NULL, speso e
 //      consigli contano solo le uscite
+//  11. foto profilo ridotta sul server, avatar non scrivibile da PUT
+//  12. ricorrenti in pausa: il cron non le registra (anche i template NULL sì)
 //
 // Richiede un driver SQLite che NON è una dipendenza del progetto (in
 // produzione si usa MySQL e non serve compilarlo):
@@ -80,7 +82,7 @@ async function main() {
   try {
     assert.strictEqual(app.db.config.connection.client, 'sqlite', 'ABORT: il database non è sqlite');
     await prova(app, porta);
-    console.log('OK: sicurezza multi-utente (entrate, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
+    console.log('OK: sicurezza multi-utente (entrate, foto profilo, ricorrenti in pausa, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
   } finally {
     await app.destroy();
     fs.rmSync(appDir, { recursive: true, force: true });
@@ -329,6 +331,47 @@ async function prova(app, porta) {
     await app.config.get('server') && (await require(path.join(radice, 'src/index')).bootstrap({ strapi: app }));
     assert.strictEqual((await q(C).findOne({ where: { id: spesa.id } })).Tipo, 'uscita', 'il bootstrap normalizza i NULL');
     await D(W).delete({ documentId: we.documentId });
+  }
+
+  // ── 11. Foto profilo: 256x256 JPEG fatta sul server ────────────────────────
+  {
+    const sharp = require(path.join(radice, 'node_modules/sharp'));
+    const png = await sharp({ create: { width: 900, height: 500, channels: 3, background: '#c3cc8c' } }).png().toBuffer();
+    const form = new FormData();
+    form.append('foto', new Blob([png], { type: 'image/png' }), 'io.png');
+    r = await http('POST', '/api/profilo/foto', jAda, form);
+    assert.strictEqual(r.status, 200, `foto: ${JSON.stringify(r.body?.error)}`);
+    assert.match(r.body.avatar, /^data:image\/jpeg;base64,/);
+    const meta = await sharp(Buffer.from(r.body.avatar.split(',')[1], 'base64')).metadata();
+    assert.deepStrictEqual([meta.width, meta.height, meta.format], [256, 256, 'jpeg'], 'ritagliata quadrata a 256px');
+    assert.strictEqual((await http('GET', '/api/users/me', jAda)).body.avatar, r.body.avatar);
+    // Un file che non è un'immagine
+    const finto = new FormData();
+    finto.append('foto', new Blob(['ciao'], { type: 'image/png' }), 'x.png');
+    assert.strictEqual((await http('POST', '/api/profilo/foto', jAda, finto)).status, 400);
+    // PUT non scrive l'avatar (andrebbe saltato il ridimensionamento)
+    await http('PUT', `/api/users/${ada.id}`, jAda, { avatar: 'data:x', nomeVisualizzato: 'Ada L.', coloreAvatar: 'kaki' });
+    const me = (await http('GET', '/api/users/me', jAda)).body;
+    assert.strictEqual(me.avatar, r.body.avatar, 'avatar non modificabile da PUT');
+    assert.deepStrictEqual([me.nomeVisualizzato, me.coloreAvatar], ['Ada L.', 'kaki']);
+    assert.strictEqual((await http('DELETE', '/api/profilo/foto', jAda)).status, 200);
+    assert.strictEqual((await http('GET', '/api/users/me', jAda)).body.avatar, null);
+    assert.ok([401, 403].includes((await http('DELETE', '/api/profilo/foto')).status));
+  }
+
+  // ── 12. Ricorrenti in pausa ────────────────────────────────────────────────
+  {
+    const { materializzaRicorrenti } = require(path.join(radice, 'src/ricorrenti'));
+    const wr = await D(W).create({ data: { Nome: 'WR', Budget: 10, users_permissions_user: ada.documentId } });
+    const cr = await D(C).create({ data: { Nome: 'Abbonamenti', wallet: wr.documentId } });
+    const attiva = await D(T).create({ data: { Descrizione: 'Palestra', Importo: 40, Data: '2026-10-05', TransazioneRicorrente: true, categorie: cr.documentId } });
+    await D(T).create({ data: { Descrizione: 'Netflix', Importo: 13, Data: '2026-10-05', TransazioneRicorrente: true, InPausa: true, categorie: cr.documentId } });
+    // template di prima del campo: NULL nel DB
+    await app.db.connection('transazionis').where({ id: attiva.id }).update({ [app.db.metadata.get(T).attributes.InPausa.columnName]: null });
+    await materializzaRicorrenti(app, new Date(2026, 10, 5, 6));
+    const nov = await D(T).findMany({ filters: { categorie: { documentId: cr.documentId }, Data: '2026-11-05' } });
+    assert.deepStrictEqual(nov.map((t) => t.Descrizione), ['Palestra'], 'la ricorrente in pausa non si registra, quella NULL sì');
+    await D(W).delete({ documentId: wr.documentId });
   }
 
   // ── 6. Accesso chiuso: gli account li crea solo l'amministratore ───────────

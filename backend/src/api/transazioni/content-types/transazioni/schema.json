@@ -41,6 +41,10 @@
       "type": "string",
       "unique": true,
       "private": false
+    },
+    "InPausa": {
+      "type": "boolean",
+      "default": false
     }
   }
 }

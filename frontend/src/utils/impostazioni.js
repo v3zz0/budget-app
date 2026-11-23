@@ -2,9 +2,21 @@
 // body da salvare. Niente Vue né rete, quindi si prova con `npm test`.
 
 export const MOTORI = [
-  { id: "ollama", titolo: "Server Ollama", sotto: "Il tuo mini PC. Solo dalla rete di casa", icona: "pi-server", esempio: "http://192.168.1.10:11434" },
-  { id: "llamacpp", titolo: "llama.cpp", sotto: "Il server llama.cpp in locale. API compatibile OpenAI", icona: "pi-code", esempio: "http://localhost:8080" },
-  { id: "openrouter", titolo: "OpenRouter", sotto: "Cloud, funziona ovunque. Ci sono modelli gratuiti", icona: "pi-cloud", esempio: "https://openrouter.ai/api/v1" },
+  {
+    id: "ollama", titolo: "Server Ollama", sotto: "Il tuo mini PC. Funziona solo dalla rete di casa.", icona: "ph-hard-drives",
+    dove: "In casa", esempio: "http://192.168.1.10:11434", urlHint: "il mini PC nella rete di casa", modelloHint: "installati sul server",
+    locale: true, privacy: "I movimenti non escono da casa tua: il modello gira sul mini PC.",
+  },
+  {
+    id: "llamacpp", titolo: "llama.cpp", sotto: "Server llama.cpp in locale, con API compatibile OpenAI.", icona: "ph-terminal-window",
+    dove: "In locale", esempio: "http://localhost:8080", urlHint: "server llama.cpp", modelloHint: "caricato sul server",
+    locale: true, privacy: "I movimenti restano sul computer che fa girare llama.cpp.",
+  },
+  {
+    id: "openrouter", titolo: "OpenRouter", sotto: "Nel cloud, funziona ovunque. Ci sono anche modelli gratuiti.", icona: "ph-cloud",
+    dove: "Cloud", esempio: "https://openrouter.ai/api/v1", urlHint: "non serve cambiarlo", modelloHint: "i gratuiti finiscono con :free",
+    locale: false, privacy: "Descrizioni e importi dei movimenti vengono inviati a OpenRouter e al fornitore del modello scelto.",
+  },
 ];
 
 /**
@@ -62,3 +74,30 @@ export function errorePassword(attuale, nuova) {
   if (nuova === attuale) return "La nuova password è uguale a quella attuale";
   return null;
 }
+
+/** Robustezza della password su tre livelli (0 = vuota). Solo un indizio visivo. */
+export function forzaPassword(p = "") {
+  if (!p) return 0;
+  let punti = 0;
+  if (p.length >= 8) punti++;
+  if (p.length >= 12) punti++;
+  if (/[a-z]/.test(p) && /[A-Z]/.test(p)) punti++;
+  if (/\d/.test(p)) punti++;
+  if (/[^A-Za-z0-9]/.test(p)) punti++;
+  return p.length < 6 ? 1 : punti >= 4 ? 3 : punti >= 2 ? 2 : 1;
+}
+
+/** "spesa  grande" -> "Spesa grande": come si salva il nome di una categoria. */
+export const nomeCategoria = (s) => {
+  const t = String(s ?? "").trim().replace(/\s+/g, " ");
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
+/** La categoria con lo stesso nome (maiuscole ignorate), se c'è. */
+export const categoriaOmonima = (nome, categorie, escludiId = null) => {
+  const n = nomeCategoria(nome).toLocaleLowerCase("it");
+  return categorie.find((c) => c.documentId !== escludiId && (c.Nome || "").trim().toLocaleLowerCase("it") === n) || null;
+};
+
+/** RicorrenzaTemporale per un giorno del mese: 31 resta 31 anche dove il mese è corto. */
+export const dataRicorrenza = (giorno) => `2000-01-${String(Math.min(Math.max(Number(giorno) || 1, 1), 31)).padStart(2, "0")}`;

@@ -5,17 +5,10 @@ import Login from "../views/login.vue";
 import Home from "../views/home.vue";
 import Transazioni from "../views/transazioni.vue";
 import Risparmio from "../views/risparmio.vue";
-import Ricorrenti from "../views/ricorrenti.vue";
 import Consigli from "../views/consigli.vue";
 import Anno from "../views/anno.vue";
-import Export from "../views/export.vue";
 import Analisi from "../views/analisi.vue";
 import Impostazioni from "../views/impostazioni/indice.vue";
-import ImpostazioniProfilo from "../views/impostazioni/profilo.vue";
-import ImpostazioniPortafogli from "../views/impostazioni/portafogli.vue";
-import ImpostazioniCategorie from "../views/impostazioni/categorie.vue";
-import ImpostazioniAi from "../views/impostazioni/ai.vue";
-import ImpostazioniNotifiche from "../views/impostazioni/notifiche.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -28,15 +21,15 @@ export const router = createRouter({
     { path: "/consigli", name: "consigli", component: Consigli },
     { path: "/anno", name: "anno", component: Anno },
     { path: "/analisi", name: "analisi", component: Analisi },
-    // Sottopagine di Impostazioni (ricorrenti ed export ne fanno parte: hanno il link "indietro")
+    // Impostazioni: una pagina, una sezione per hash (#profilo, #ai...).
+    // I vecchi indirizzi (e i link delle notifiche) portano alla sezione giusta.
     { path: "/impostazioni", name: "impostazioni", component: Impostazioni },
-    { path: "/impostazioni/profilo", name: "profilo", component: ImpostazioniProfilo },
-    { path: "/impostazioni/portafogli", name: "portafogli", component: ImpostazioniPortafogli },
-    { path: "/impostazioni/categorie", name: "categorie", component: ImpostazioniCategorie },
-    { path: "/impostazioni/ai", name: "ai", component: ImpostazioniAi },
-    { path: "/impostazioni/notifiche", name: "notifiche", component: ImpostazioniNotifiche },
-    { path: "/ricorrenti", name: "ricorrenti", component: Ricorrenti },
-    { path: "/export", name: "export", component: Export },
+    ...["profilo", "portafogli", "categorie", "ai", "notifiche"].map((s) => ({
+      path: `/impostazioni/${s}`,
+      redirect: (to) => ({ path: "/impostazioni", hash: `#${s}`, query: to.query }),
+    })),
+    { path: "/ricorrenti", redirect: (to) => ({ path: "/impostazioni", hash: "#ricorrenti", query: to.query }) },
+    { path: "/export", redirect: { path: "/impostazioni", hash: "#export" } },
     { path: "/:catchAll(.*)", redirect: "/" },
   ],
 });

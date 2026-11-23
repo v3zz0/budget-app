@@ -29,9 +29,19 @@ export const elencaRicorrenti = (walletId) =>
       TransazioneRicorrente: { $eq: true },
       categorie: { wallet: { documentId: { $eq: walletId } } },
     },
-    populate: { categorie: { fields: ["Nome", "icona"] } },
+    populate: { categorie: { fields: ["Nome", "icona", "Tipo"] } },
     sort: ["Data:desc", "id:desc"],
   });
+
+/** Modifica di una ricorrente dalle Impostazioni: importo, giorno, pausa. */
+export const aggiornaRicorrente = (id, campi) => api.put(`${URL}/${id}`, { data: campi });
+
+/**
+ * Interrompe una ricorrente: il template torna una transazione normale del suo
+ * mese. Non si elimina: il template È anche la prima spesa registrata.
+ */
+export const interrompiRicorrente = (id) =>
+  api.put(`${URL}/${id}`, { data: { TransazioneRicorrente: false, RicorrenzaTemporale: null, InPausa: false } });
 
 export const trovaTransazione = async (id) =>
   (await api.get(`${URL}/${id}`, { params: { populate: { categorie: { fields: ["Nome"] } } } }))

@@ -86,7 +86,11 @@
     },
     "aiMotore": {
       "type": "enumeration",
-      "enum": ["ollama", "openrouter", "llamacpp"],
+      "enum": [
+        "ollama",
+        "openrouter",
+        "llamacpp"
+      ],
       "default": "ollama"
     },
     "aiUrl": {
@@ -110,6 +114,33 @@
     "aiChiaveLlamacppImpostata": {
       "type": "boolean",
       "default": false
+    },
+    "nomeVisualizzato": {
+      "type": "string",
+      "maxLength": 30
+    },
+    "avatar": {
+      "type": "text"
+    },
+    "coloreAvatar": {
+      "type": "enumeration",
+      "enum": [
+        "nebbia",
+        "argilla",
+        "kaki",
+        "pietra",
+        "rosa"
+      ],
+      "default": "nebbia"
+    },
+    "tema": {
+      "type": "enumeration",
+      "enum": [
+        "sistema",
+        "giorno",
+        "notte"
+      ],
+      "default": "sistema"
     }
   }
 }

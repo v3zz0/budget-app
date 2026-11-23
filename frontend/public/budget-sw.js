@@ -11,7 +11,7 @@ async function dispositivoAttivo(impronta) {
 
 function avviso(dati) {
   if (dati.tipo === "prova") {
-    return { titolo: "Notifica di prova", corpo: "Questo dispositivo può ricevere gli avvisi di Budget App.", url: "/impostazioni/notifiche" };
+    return { titolo: "Notifica di prova", corpo: "Questo dispositivo può ricevere gli avvisi di Budget App.", url: "/impostazioni#notifiche" };
   }
 
   if (!idValido.test(dati.riferimento)) return null;

@@ -29,7 +29,9 @@ module.exports = (plugin) => {
     // Ruolo, blocco e conferma non si toccano dall'app: sono la serratura, e
     // non ha senso lasciarne la chiave dentro. Restano modificabili solo dal
     // pannello di amministrazione.
-    for (const campo of ['role', 'blocked', 'confirmed', 'provider', 'orarioNotificheWeb', 'anticipoNotifiche', 'avvisiBudget']) {
+    // `avatar` solo da POST /api/profilo/foto, che la ridimensiona sul server:
+    // da qui si potrebbe scrivere qualunque stringa (anche enorme).
+    for (const campo of ['role', 'blocked', 'confirmed', 'provider', 'orarioNotificheWeb', 'anticipoNotifiche', 'avvisiBudget', 'avatar']) {
       delete ctx.request.body[campo];
     }
 

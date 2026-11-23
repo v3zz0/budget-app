@@ -20,20 +20,42 @@ export const elencaCategorie = (walletId) =>
     sort: ["Nome", "id"],
   });
 
-export const creaCategoria = (walletId, { nome, budget, icona }) =>
-  api.post("/api/categories", {
-    data: { Nome: nome, Budget_categoria: budget, wallet: walletId, ...(icona && { icona }) },
-  });
+// tipo: "uscita" | "entrata". nascosta: categoria nata da "+ Altro" senza
+// "Aggiungi alle mie categorie" (vale per quel movimento, non compare tra le pillole).
+export const creaCategoria = async (walletId, { nome, budget, icona, tipo = "uscita", nascosta = false }) =>
+  (
+    await api.post("/api/categories", {
+      data: { Nome: nome, Budget_categoria: budget, wallet: walletId, Tipo: tipo, Nascosta: nascosta, ...(icona && { icona }) },
+    })
+  ).data.data;
 
 // icona sempre inviata: stringa vuota = tolta
 export const aggiornaCategoria = (id, { nome, budget, icona }) =>
   api.put(`/api/categories/${id}`, { data: { Nome: nome, Budget_categoria: budget, icona } });
 
+/** Quante transazioni (di sempre) ha un filtro: una richiesta da 1 riga, si legge il totale. */
+const conta = async (filters) =>
+  (await api.get("/api/transazionis", { params: { filters, pagination: { pageSize: 1 }, fields: ["id"] } })).data.meta
+    .pagination.total;
+export const contaTransazioniWallet = (walletId) => conta({ categorie: { wallet: { documentId: { $eq: walletId } } } });
+export const contaTransazioniCategoria = (id) => conta({ categorie: { documentId: { $eq: id } } });
+export const consigliCategoria = (id) =>
+  elencaTutte("/api/consiglios", { filters: { categorie: { documentId: { $eq: id } } }, fields: ["tipo", "stato"] });
+
 export const eliminaCategoria = (id) => api.delete(`/api/categories/${id}`);
 
 // --- Profilo ----------------------------------------------------------------
 // Il server limita PUT /api/users/:id al proprio profilo (strapi-server.js).
-export const aggiornaProfilo = (userId, { username, email }) => api.put(`/api/users/${userId}`, { username, email });
+// Campi qualsiasi tra username, email, nomeVisualizzato, coloreAvatar, tema.
+export const aggiornaProfilo = (userId, campi) => api.put(`/api/users/${userId}`, campi);
+
+/** Foto profilo: la ritaglia e riduce il server (256px). Ritorna il data URL. */
+export async function caricaFoto(file) {
+  const form = new FormData();
+  form.append("foto", file, file.name || "foto.jpg");
+  return (await api.post("/api/profilo/foto", form, { timeout: 60000 })).data.avatar;
+}
+export const rimuoviFoto = () => api.delete("/api/profilo/foto");
 
 export const cambiaPassword = (attuale, nuova) =>
   api.post("/api/auth/change-password", {

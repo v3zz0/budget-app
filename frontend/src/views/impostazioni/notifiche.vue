@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, reactive, ref } from "vue";
 import { useToast } from "primevue/usetoast";
+import Interruttore from "@/components/Interruttore.vue";
 import { erroreLeggibile } from "@/services/api.js";
 import {
   attivaNotifiche, disattivaNotifiche, provaNotifiche, salvaPreferenze,
@@ -76,60 +77,57 @@ function inviaProva() {
 </script>
 
 <template>
-  <div class="flex max-w-2xl flex-col gap-5 px-4 pt-6">
-    <div>
-      <Indietro />
-      <h1 class="text-3xl font-bold text-testo">Notifiche</h1>
-      <p class="mt-2 text-sm text-testo2">Scegli quali avvisi ricevere anche quando Budget App è chiusa.</p>
-    </div>
+  <section class="panel reveal">
+    <h2 class="text-[28px] leading-[1.05] font-medium tracking-[-0.04em] sm:text-[34px]">Notifiche</h2>
+    <p class="mt-3 max-w-[60ch] text-testo2">Scegli quali avvisi ricevere anche quando Budget è chiusa.</p>
+  </section>
 
-    <p v-if="errore" role="alert" class="rounded-xl border border-errore/40 bg-errore/15 p-4 text-sm text-errore-testo">{{ errore }}</p>
-    <Skeleton v-if="attesa === 'carica'" height="9rem" borderRadius="16px" />
-    <Button v-else-if="!stato" label="Riprova" class="self-start" @click="carica" />
+  <p v-if="errore" role="alert" class="box-errore">{{ errore }}</p>
+  <Skeleton v-if="attesa === 'carica'" height="9rem" borderRadius="28px" />
+  <button v-else-if="!stato" class="pill-btn pill-btn--cream self-start" @click="carica">Riprova</button>
 
-    <template v-else>
-      <form class="flex flex-col gap-5 rounded-2xl border border-bordo bg-card p-5" @submit.prevent="salva">
-        <div class="flex flex-col gap-2">
-          <label id="notifiche-scadenze-label" for="notifiche-scadenze" class="font-semibold text-testo">Promemoria per le scadenze ricorrenti</label>
-          <Select v-model="preferenze.scadenze" inputId="notifiche-scadenze" aria-labelledby="notifiche-scadenze-label" :options="opzioni"
-            optionLabel="etichetta" optionValue="valore" placeholder="Disattivate" fluid />
-        </div>
+  <template v-else>
+    <form class="panel flex flex-col gap-5" @submit.prevent="salva">
+      <div>
+        <label id="notifiche-scadenze-label" for="notifiche-scadenze" class="etichetta">Promemoria per le scadenze ricorrenti</label>
+        <Select v-model="preferenze.scadenze" inputId="notifiche-scadenze" aria-labelledby="notifiche-scadenze-label" :options="opzioni"
+          optionLabel="etichetta" optionValue="valore" placeholder="Disattivate" fluid />
+      </div>
 
-        <div v-if="preferenze.scadenze !== null" class="flex flex-col gap-2">
-          <label for="notifiche-orario" class="text-sm font-semibold text-testo">Orario del promemoria</label>
-          <input id="notifiche-orario" v-model="preferenze.orario" type="time" required
-            class="min-h-11 w-full rounded-lg border border-bordo bg-campo px-3 text-testo" />
-          <p class="text-xs text-testo2">Ora italiana ({{ stato.fuso }})</p>
-        </div>
+      <div v-if="preferenze.scadenze !== null">
+        <label for="notifiche-orario" class="etichetta">Orario del promemoria</label>
+        <input id="notifiche-orario" v-model="preferenze.orario" type="time" required class="campo rounded-full!" />
+        <p class="mt-2 text-[12.5px] text-testo2">Ora italiana ({{ stato.fuso }})</p>
+      </div>
 
-        <div class="flex items-start justify-between gap-4 border-t border-bordo pt-5">
-          <div>
-            <label for="notifiche-budget" class="font-semibold text-testo">Sforamento del budget</label>
-            <p class="mt-1 text-sm text-testo2">Un avviso per categoria al mese, quando la spesa supera il budget.</p>
-          </div>
-          <ToggleSwitch v-model="preferenze.budget" inputId="notifiche-budget" />
-        </div>
+      <label class="flex cursor-pointer items-center justify-between gap-5 border-t border-bordo pt-5">
+        <span>
+          <b class="block text-[15px] font-medium">Sforamento del budget</b>
+          <small class="mt-0.5 block text-[13px] text-testo2">Un avviso per categoria al mese, quando la spesa supera il budget.</small>
+        </span>
+        <Interruttore v-model="preferenze.budget" etichetta="Sforamento del budget" />
+      </label>
 
-        <Button type="submit" label="Salva preferenze" icon="pi pi-check" :loading="attesa === 'salva'" :disabled="!!attesa" />
-      </form>
+      <div class="flex justify-end">
+        <button type="submit" class="pill-btn pill-btn--cream h-12!" :disabled="!!attesa">Salva preferenze</button>
+      </div>
+    </form>
 
-      <section class="flex flex-col gap-3 rounded-2xl border border-bordo bg-card p-5">
-        <h2 class="text-lg font-bold text-testo">Questo dispositivo</h2>
-        <p class="text-sm text-testo2">I dettagli delle spese si vedono dentro Budget App dopo l’accesso.</p>
-        <p v-if="!stato.publicKey" role="status" class="text-sm text-testo2">Le notifiche push devono ancora essere configurate sul server.</p>
-        <p v-else-if="!supporto || !stato.worker" role="status" class="text-sm text-testo2">
-          Le notifiche push richiedono un browser compatibile e una connessione HTTPS. Su iPhone, apri Budget App dalla schermata Home.
-        </p>
-        <p v-else role="status" class="text-sm font-semibold text-testo">{{ stato.attivo ? "Notifiche attive" : "Notifiche disattivate" }}</p>
+    <section class="panel flex flex-col gap-3">
+      <h3 class="text-[17px] font-semibold tracking-[-0.015em]">Questo dispositivo</h3>
+      <p class="text-sm text-testo2">I dettagli delle spese si vedono dentro Budget dopo l’accesso.</p>
+      <p v-if="!stato.publicKey" role="status" class="text-sm text-testo2">Le notifiche push devono ancora essere configurate sul server.</p>
+      <p v-else-if="!supporto || !stato.worker" role="status" class="text-sm text-testo2">
+        Le notifiche push richiedono un browser compatibile e una connessione HTTPS. Su iPhone, apri Budget dalla schermata Home.
+      </p>
+      <p v-else role="status" class="text-sm font-medium">{{ stato.attivo ? "Notifiche attive" : "Notifiche disattivate" }}</p>
 
-        <div v-if="stato.worker && (stato.attivo || stato.publicKey)" class="flex flex-col gap-2 sm:flex-row">
-          <Button :label="stato.attivo ? 'Disattiva su questo dispositivo' : 'Attiva le notifiche'"
-            :severity="stato.attivo ? 'secondary' : undefined" icon="pi pi-bell"
-            :loading="attesa === 'dispositivo'" :disabled="!!attesa" @click="gestisciDispositivo" />
-          <Button v-if="stato.attivo" label="Invia notifica di prova" outlined
-            :loading="attesa === 'prova'" :disabled="!!attesa" @click="inviaProva" />
-        </div>
-      </section>
-    </template>
-  </div>
+      <div v-if="stato.worker && (stato.attivo || stato.publicKey)" class="flex flex-col gap-2 sm:flex-row">
+        <button class="pill-btn h-12!" :class="stato.attivo ? 'pill-btn--ghost' : 'pill-btn--cream'" :disabled="!!attesa" @click="gestisciDispositivo">
+          <i class="ph-bold ph-bell" />{{ stato.attivo ? "Disattiva su questo dispositivo" : "Attiva le notifiche" }}
+        </button>
+        <button v-if="stato.attivo" class="pill-btn pill-btn--ghost h-12!" :disabled="!!attesa" @click="inviaProva">Invia notifica di prova</button>
+      </div>
+    </section>
+  </template>
 </template>

@@ -5,7 +5,7 @@ import { useToast } from "primevue/usetoast";
 import { useAuthStore } from "@/stores/auth.js";
 import { useWalletStore } from "@/stores/wallet.js";
 import { erroreLeggibile } from "@/services/api.js";
-import { impostaTema, temaChiaro } from "@/tema.js";
+import { temaChiaro } from "@/tema.js";
 import Avatar from "./Avatar.vue";
 
 const router = useRouter();
@@ -34,7 +34,7 @@ const sel = computed(() => walletStore.selectedWallet);
 
 function sottotitolo(w) {
   if (w.condiviso && walletStore.partnerDi(w)) return `Condiviso con ${walletStore.partnerDi(w).nome}`;
-  return w.EscludiStatistiche ? "Fuori dalle statistiche" : "Personale";
+  return w.escludiDaStatistiche ? "Fuori dalle statistiche" : "Personale";
 }
 function scegli(w) {
   if (w.documentId !== sel.value?.documentId) walletStore.setSelectedWallet(w);
@@ -60,7 +60,7 @@ onBeforeUnmount(() => {
 });
 
 function cambiaTema() {
-  impostaTema(temaChiaro.value ? "notte" : "giorno");
+  auth.salvaTema(temaChiaro.value ? "notte" : "giorno");
 }
 function esci() {
   auth.logout();

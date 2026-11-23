@@ -18,6 +18,8 @@ export const useWalletStore = defineStore("wallet", {
     walletId: (s) => s.selectedWallet?.documentId || null,
     /** Io, come persona (nome visualizzato, foto, colore). */
     io: () => persona(useAuthStore().userInfo),
+    /** Ho creato io questo portafoglio? (nel condiviso solo il creatore lo elimina) */
+    creatoDaMe: () => (w) => !w?.creatoDa || w.creatoDa.id === useAuthStore().userInfo?.id,
     /** L'altra persona di un portafoglio condiviso, o null. Il lilla è suo. */
     partnerDi: () => (w) => {
       const mioId = useAuthStore().userInfo?.id;

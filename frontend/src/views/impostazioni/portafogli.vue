@@ -3,44 +3,69 @@ import { computed, reactive, ref, watch } from "vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { useWalletStore } from "@/stores/wallet.js";
-import { aggiornaWallet, creaWallet, eliminaWallet, impostaEsclusione } from "@/services/impostazioni.js";
+import {
+  aggiornaWallet, contaTransazioniWallet, creaWallet, elencaCategorie, eliminaWallet, impostaEsclusione,
+} from "@/services/impostazioni.js";
 import { erroreLeggibile } from "@/services/api.js";
+import { eur } from "@/utils/formato.js";
+import Interruttore from "@/components/Interruttore.vue";
+import Avatar from "@/components/Avatar.vue";
+import Condivisione from "./condivisione.vue";
 
 const confirm = useConfirm();
 const toast = useToast();
 const walletStore = useWalletStore();
+const avviso = (severity, summary, detail) => toast.add({ severity, summary, detail, life: 3500 });
+const errore = (e) => avviso("error", "Errore", erroreLeggibile(e));
 
-const selezionato = computed(() => walletStore.selectedWallet);
-const form = reactive({ nome: "", budget: 0 });
+const sel = computed(() => walletStore.selectedWallet);
+// budget null e non 0: un campo vuoto si digita subito
+const form = reactive({ nome: "", budget: null });
 const salvando = ref(false);
-// budget null e non 0: un campo vuoto si digita subito, "0,00 €" andrebbe prima selezionato
 const nuovo = reactive({ aperto: false, nome: "", budget: null, salvando: false });
 
-// Il form segue il portafoglio scelto (dall'elenco qui sotto o dalla barra in alto).
+// Quante transazioni ha ogni portafoglio: una richiesta da una riga ciascuno.
+const conteggi = ref({});
 watch(
-  selezionato,
-  (w) => {
-    form.nome = w?.Nome ?? "";
-    form.budget = w?.Budget ?? 0;
+  () => walletStore.wallets.map((w) => w.documentId).join(),
+  async () => {
+    const coppie = await Promise.all(
+      walletStore.wallets.map(async (w) => [w.documentId, await contaTransazioniWallet(w.documentId).catch(() => null)]),
+    );
+    conteggi.value = Object.fromEntries(coppie);
   },
   { immediate: true },
 );
 
+// Categorie di spesa del portafoglio scelto, per il controllo dal vivo sul budget.
+const categorie = ref([]);
+watch(
+  sel,
+  async (w) => {
+    form.nome = w?.Nome ?? "";
+    form.budget = w?.Budget ?? null;
+    categorie.value = [];
+    if (w) categorie.value = await elencaCategorie(w.documentId).catch(() => []);
+  },
+  { immediate: true },
+);
+const budgetCategorie = computed(() =>
+  categorie.value.filter((c) => (c.Tipo || "uscita") === "uscita").reduce((s, c) => s + (Number(c.Budget_categoria) || 0), 0),
+);
+const liberi = computed(() => (Number(form.budget) || 0) - budgetCategorie.value);
+
 const modificato = computed(
-  () => !!selezionato.value && (form.nome.trim() !== (selezionato.value.Nome ?? "") || (form.budget ?? 0) !== (selezionato.value.Budget ?? 0)),
+  () => !!sel.value && (form.nome.trim() !== (sel.value.Nome ?? "") || (Number(form.budget) || 0) !== (Number(sel.value.Budget) || 0)),
 );
 
-const avviso = (severity, summary, detail) => toast.add({ severity, summary, detail, life: 3500 });
-const errore = (e) => avviso("error", "Errore", erroreLeggibile(e));
-
-// Salvataggio esplicito e non a debounce come nell'app: nel browser un
-// salvataggio a metà digitazione scriverebbe sul server un nome incompleto.
+// Salvataggio esplicito e non a debounce: un salvataggio a metà digitazione
+// scriverebbe sul server un nome incompleto.
 async function salva() {
   if (!form.nome.trim()) return avviso("warn", "Il nome non può essere vuoto");
   salvando.value = true;
   try {
-    await aggiornaWallet(selezionato.value.documentId, form.nome.trim(), form.budget ?? 0);
-    await walletStore.carica(); // riallinea selezione e barra in alto
+    await aggiornaWallet(sel.value.documentId, form.nome.trim(), Number(form.budget) || 0);
+    await walletStore.carica();
     avviso("success", "Portafoglio aggiornato");
   } catch (e) {
     errore(e);
@@ -49,11 +74,10 @@ async function salva() {
   }
 }
 
-// Aggiorna prima il server: se la chiamata fallisce l'interruttore non si
-// muove (è legato allo store), così non racconta una cosa diversa dal database.
+// Prima il server: se la chiamata fallisce l'interruttore non si muove.
 async function cambiaEsclusione(escluso) {
   try {
-    await impostaEsclusione(selezionato.value.documentId, escluso);
+    await impostaEsclusione(sel.value.documentId, escluso);
     await walletStore.carica();
   } catch (e) {
     errore(e);
@@ -61,12 +85,14 @@ async function cambiaEsclusione(escluso) {
 }
 
 async function crea() {
+  if (!nuovo.nome.trim()) return;
   nuovo.salvando = true;
   try {
-    const creato = await creaWallet(nuovo.nome.trim(), nuovo.budget ?? 0);
+    // Il server gli crea anche il salvadanaio "Risparmi mensili"
+    const creato = await creaWallet(nuovo.nome.trim(), Number(nuovo.budget) || 0);
     await walletStore.carica();
     const w = walletStore.wallets.find((x) => x.documentId === creato.documentId);
-    if (w) walletStore.setSelectedWallet(w); // quasi sempre ci si aggiungono subito le categorie
+    if (w) walletStore.setSelectedWallet(w);
     nuovo.aperto = false;
     avviso("success", "Portafoglio creato");
   } catch (e) {
@@ -76,24 +102,20 @@ async function crea() {
   }
 }
 
-function apriNuovo() {
-  Object.assign(nuovo, { aperto: true, nome: "", budget: null });
-}
-
+const mioWallet = computed(() => !sel.value?.condiviso || walletStore.creatoDaMe(sel.value));
 function elimina() {
-  const w = selezionato.value;
-  // La conferma nomina il portafoglio, così un click distratto non basta.
+  const w = sel.value;
+  const n = conteggi.value[w.documentId];
   confirm.require({
-    header: "Eliminare il portafoglio?",
-    message: `Stai per eliminare "${w.Nome}" con le sue categorie, transazioni e lo storico del salvadanaio: verranno eliminati definitivamente e non si possono recuperare.`,
-    acceptLabel: "Elimina",
-    rejectLabel: "Annulla",
-    acceptProps: { severity: "danger" },
-    rejectProps: { severity: "secondary", text: true },
+    header: `Eliminare “${w.Nome}”?`,
+    message:
+      `Si perdono ${n != null ? `le sue ${n} transazioni` : "tutte le sue transazioni"}, le categorie e lo storico del salvadanaio. Non si può annullare.` +
+      (w.condiviso ? `\n\nSparisce anche per ${walletStore.partnerDi(w)?.nome || "l'altra persona"}.` : ""),
+    acceptLabel: "Elimina portafoglio",
     accept: async () => {
       try {
         await eliminaWallet(w.documentId);
-        await walletStore.carica(); // se quello scelto non c'è più, ripiega sul primo
+        await walletStore.carica();
         avviso("success", "Portafoglio eliminato");
       } catch (e) {
         errore(e);
@@ -104,86 +126,127 @@ function elimina() {
 </script>
 
 <template>
-  <div class="flex max-w-lg flex-col gap-5 px-4 pt-6">
-    <div>
-      <Indietro />
-      <h1 class="text-3xl font-bold text-testo">Portafogli e budget</h1>
-    </div>
+  <section class="panel reveal">
+    <h2 class="text-[28px] leading-[1.05] font-medium tracking-[-0.04em] sm:text-[34px]">Portafogli e budget</h2>
+    <p class="mt-3 max-w-[60ch] text-testo2">
+      Ogni portafoglio ha il suo budget, le sue categorie e il suo salvadanaio. Lo cambi dal selettore in alto.
+    </p>
+  </section>
 
-    <!-- Scelta del portafoglio da modificare -->
-    <div v-if="walletStore.wallets.length > 1" class="flex flex-wrap gap-2" role="radiogroup" aria-label="Portafoglio">
+  <section class="panel">
+    <h3 class="mb-5 text-[17px] font-semibold tracking-[-0.015em]">I tuoi portafogli</h3>
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2.5">
       <button
         v-for="w in walletStore.wallets"
         :key="w.documentId"
         type="button"
-        role="radio"
-        :aria-checked="w.documentId === walletStore.walletId"
-        class="rounded-full border px-4 py-1.5 text-sm"
-        :class="w.documentId === walletStore.walletId ? 'border-accent bg-accent/10 text-accent' : 'border-bordo bg-card text-testo2'"
+        class="flex min-h-[150px] min-w-0 flex-col gap-6 rounded-[20px] p-5 text-left transition-colors"
+        :class="w.documentId === sel?.documentId ? 'bg-crema text-inchiostro' : 'bg-campo hover:bg-bordo'"
+        :aria-pressed="w.documentId === sel?.documentId"
         @click="walletStore.setSelectedWallet(w)"
       >
-        {{ w.Nome }}
+        <span class="flex items-center justify-between gap-2">
+          <span v-if="w.condiviso" class="flex">
+            <Avatar :p="walletStore.io" :size="28" />
+            <Avatar :p="walletStore.partnerDi(w)" :size="28" class="-ml-[7px]" />
+          </span>
+          <i v-else class="ph-bold ph-wallet text-[22px]" />
+          <span v-if="w.escludiDaStatistiche" class="chip">fuori dalle statistiche</span>
+          <span v-else-if="w.condiviso && walletStore.partnerDi(w)" class="chip">con {{ walletStore.partnerDi(w).nome }}</span>
+        </span>
+        <span class="mt-auto min-w-0">
+          <b class="block truncate text-base font-semibold">{{ w.Nome }}</b>
+          <small class="text-[13px] opacity-75">
+            {{ eur(w.Budget || 0, { corto: true }) }} al mese
+            <template v-if="conteggi[w.documentId] != null"> · {{ conteggi[w.documentId] }} transazioni</template>
+          </small>
+        </span>
+      </button>
+      <button
+        type="button"
+        class="flex min-h-[150px] flex-col items-center justify-center gap-2 rounded-[20px] text-testo2 shadow-[inset_0_0_0_1.5px_var(--color-bordo-forte)] hover:text-testo"
+        @click="Object.assign(nuovo, { aperto: true, nome: '', budget: null })"
+      >
+        <i class="ph-bold ph-plus text-[22px]" />Nuovo portafoglio
       </button>
     </div>
 
-    <template v-if="selezionato">
-      <form class="flex flex-col gap-4 rounded-2xl border border-bordo bg-card p-5" @submit.prevent="salva">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.15em] text-testo2">Dettagli portafoglio</p>
-        <div class="flex flex-col gap-2">
-          <label for="nome" class="text-sm text-testo2">Nome</label>
-          <InputText id="nome" v-model="form.nome" fluid />
+    <form v-if="nuovo.aperto" class="mt-5 rounded-[20px] bg-campo p-5" @submit.prevent="crea">
+      <div class="grid gap-4 md:grid-cols-[2fr_1fr]">
+        <div>
+          <label class="etichetta" for="n-nome">Nome del nuovo portafoglio</label>
+          <input id="n-nome" v-model="nuovo.nome" class="campo rounded-full! bg-card!" maxlength="40" autofocus />
         </div>
-        <div class="flex flex-col gap-2">
-          <label for="budget" class="text-sm text-testo2">Budget mensile</label>
-          <InputNumber v-model="form.budget" inputId="budget" mode="currency" currency="EUR" locale="it-IT" :min="0" fluid />
+        <div>
+          <label class="etichetta" for="n-budget">Budget mensile</label>
+          <InputNumber v-model="nuovo.budget" inputId="n-budget" mode="currency" currency="EUR" locale="it-IT" :min="0" fluid />
         </div>
-        <Button type="submit" label="Salva" :loading="salvando" :disabled="!modificato" />
-      </form>
+      </div>
+      <p class="mt-3 text-[12.5px] text-testo2">Nasce con il suo salvadanaio “Risparmi mensili”.</p>
+      <div class="mt-4 flex justify-end gap-2">
+        <button type="button" class="pill-btn pill-btn--ghost h-11! px-5!" @click="nuovo.aperto = false">Annulla</button>
+        <button type="submit" class="pill-btn pill-btn--cream h-11! px-5!" :disabled="nuovo.salvando || !nuovo.nome.trim()">Crea</button>
+      </div>
+    </form>
+  </section>
 
-      <section class="rounded-2xl border border-bordo bg-card p-5">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.15em] text-testo2">Statistiche</p>
-        <label class="mt-3 flex items-center justify-between gap-4">
-          <span>
-            <span class="block font-semibold text-testo">Escludi "{{ selezionato.Nome }}"</span>
-            <span class="block text-xs text-testo2">
-              Resta visibile in home, ma esce da export e avvisi. Utile per promemoria di scadenze (mutuo, IMU) che non sono spesa corrente.
-            </span>
+  <section v-if="sel" class="panel">
+    <h3 class="mb-5 truncate text-[17px] font-semibold tracking-[-0.015em]">Dettagli di {{ sel.Nome }}</h3>
+    <form novalidate @submit.prevent="salva">
+      <div class="grid gap-5 md:grid-cols-2">
+        <div>
+          <label class="etichetta" for="w-nome">Nome</label>
+          <input id="w-nome" v-model="form.nome" class="campo rounded-full!" maxlength="40" autocomplete="off" />
+        </div>
+        <div>
+          <label class="etichetta" for="w-budget">Budget mensile</label>
+          <InputNumber v-model="form.budget" inputId="w-budget" mode="currency" currency="EUR" locale="it-IT" :min="0" fluid />
+        </div>
+      </div>
+      <div class="mt-5 flex flex-wrap items-center gap-3 rounded-[14px] bg-fondo px-5 py-4 text-[13.5px]">
+        <span>
+          Categorie di spesa <b class="num font-medium">{{ eur(budgetCategorie, { corto: true }) }}</b> su
+          {{ eur(Number(form.budget) || 0, { corto: true }) }} ·
+          <span :class="liberi < 0 ? 'text-fg-avviso' : 'text-testo2'">
+            {{ liberi < 0 ? `oltre di ${eur(-liberi, { corto: true })}` : `liberi ${eur(liberi, { corto: true })}` }}
           </span>
-          <ToggleSwitch :modelValue="!!selezionato.escludiDaStatistiche" @update:modelValue="cambiaEsclusione" />
-        </label>
-      </section>
-    </template>
-    <p v-else class="py-6 text-center text-testo2">Nessun portafoglio: creane uno per cominciare.</p>
+        </span>
+        <span class="bar min-w-[120px] flex-1">
+          <span
+            :class="{ 'bg-arancio!': liberi < 0 }"
+            :style="{ width: `${Math.min(100, (budgetCategorie / (Number(form.budget) || 1)) * 100)}%` }"
+          />
+        </span>
+      </div>
 
-    <Button label="Nuovo portafoglio" icon="pi pi-plus" severity="secondary" outlined @click="apriNuovo" />
+      <label class="mt-6 flex cursor-pointer items-center justify-between gap-5">
+        <span>
+          <b class="block text-[15px] font-medium">Escludi dalle statistiche</b>
+          <small class="mt-0.5 block max-w-[56ch] text-[13px] text-testo2">
+            Resta visibile in Home, ma esce da export, analisi e avvisi. Utile per promemoria di scadenze come mutuo o IMU, che
+            non sono spesa corrente.
+          </small>
+        </span>
+        <Interruttore :modelValue="!!sel.escludiDaStatistiche" etichetta="Escludi dalle statistiche" @update:modelValue="cambiaEsclusione" />
+      </label>
 
-    <!-- Distruttivo: in fondo e staccato dai campi che si toccano ogni giorno -->
-    <Button
-      v-if="selezionato && walletStore.wallets.length > 1"
-      :label="`Elimina &quot;${selezionato.Nome}&quot;`"
-      icon="pi pi-trash"
-      severity="danger"
-      text
-      class="mt-6"
-      @click="elimina"
-    />
+      <div class="mt-8 flex flex-col-reverse items-stretch justify-between gap-2 sm:flex-row sm:items-center">
+        <button
+          v-if="walletStore.wallets.length > 1 && mioWallet"
+          type="button"
+          class="inline-flex h-10 items-center gap-1.5 self-start rounded-full px-3 text-sm font-medium text-fg-avviso hover:bg-campo"
+          @click="elimina"
+        >
+          <i class="ph-bold ph-trash" />Elimina portafoglio
+        </button>
+        <span v-else class="text-[12.5px] text-testo2">
+          {{ walletStore.wallets.length <= 1 ? "È il tuo unico portafoglio: non si può eliminare." : "Solo chi l'ha creato può eliminarlo." }}
+        </span>
+        <button type="submit" class="pill-btn pill-btn--cream h-12! self-end" :disabled="salvando || !modificato">Salva</button>
+      </div>
+    </form>
+  </section>
+  <p v-else class="vuoto">Nessun portafoglio: creane uno per cominciare.</p>
 
-    <Dialog v-model:visible="nuovo.aperto" modal header="Nuovo portafoglio" :style="{ width: '24rem', maxWidth: '92vw' }">
-      <form id="nuovo-wallet" class="flex flex-col gap-4" @submit.prevent="crea">
-        <div class="flex flex-col gap-2">
-          <label for="nuovo-nome" class="text-sm text-testo2">Nome</label>
-          <InputText id="nuovo-nome" v-model="nuovo.nome" autofocus fluid />
-        </div>
-        <div class="flex flex-col gap-2">
-          <label for="nuovo-budget" class="text-sm text-testo2">Budget mensile</label>
-          <InputNumber v-model="nuovo.budget" inputId="nuovo-budget" mode="currency" currency="EUR" locale="it-IT" :min="0" fluid />
-        </div>
-      </form>
-      <template #footer>
-        <Button label="Annulla" severity="secondary" text @click="nuovo.aperto = false" />
-        <!-- Senza nome non si crea: un portafoglio "" non si distingue dagli altri nella barra in alto -->
-        <Button type="submit" form="nuovo-wallet" label="Crea" :loading="nuovo.salvando" :disabled="!nuovo.nome.trim()" />
-      </template>
-    </Dialog>
-  </div>
+  <Condivisione v-if="sel" />
 </template>

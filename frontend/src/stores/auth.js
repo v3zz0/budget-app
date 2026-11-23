@@ -4,6 +4,7 @@ import { disattivaNotifiche } from "@/services/notifiche.js";
 import { useWalletStore } from "./wallet.js";
 import { useDashboardStore } from "./dashboard.js";
 import { useConsigliStore } from "./consigli.js";
+import { impostaTema } from "@/tema.js";
 
 const leggiUtente = () => {
   try {
@@ -35,12 +36,23 @@ export const useAuthStore = defineStore("auth", {
         this.logout();
         throw e;
       }
+      // La preferenza salvata sull'utente vale su ogni dispositivo
+      if (this.userInfo.tema) impostaTema(this.userInfo.tema);
     },
 
     async fetchUserInfo() {
       const { data } = await api.get("/api/users/me");
       this.userInfo = data;
       localStorage.setItem("userInfo", JSON.stringify(data));
+    },
+
+    /** Tema scelto: sul dispositivo subito, sull'utente in background. */
+    salvaTema(t) {
+      impostaTema(t);
+      if (!this.userInfo.id) return;
+      this.userInfo = { ...this.userInfo, tema: t };
+      localStorage.setItem("userInfo", JSON.stringify(this.userInfo));
+      api.put(`/api/users/${this.userInfo.id}`, { tema: t }).catch(() => {});
     },
 
     logout() {

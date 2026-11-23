@@ -12,8 +12,9 @@ const emojiLocali = {
   name: "emoji-locali",
   configureServer(server) {
     server.middlewares.use("/emoji", (req, res, next) => {
-      const file = join(EMOJI, decodeURIComponent(req.url.split("?")[0]).replace(/[^a-f0-9-.]/g, ""));
-      if (!existsSync(file)) return next();
+      const nome = req.url.split("?")[0].slice(1);
+      if (!/^[0-9a-f-]+\.png$/.test(nome) || !existsSync(join(EMOJI, nome))) return next();
+      const file = join(EMOJI, nome);
       res.setHeader("Content-Type", "image/png");
       createReadStream(file).pipe(res);
     });

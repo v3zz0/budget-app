@@ -90,6 +90,15 @@
   --color-dock-testo-on: #efe6da;
   --color-dock-attiva: #e8d8c9;
 
+  /* Anteprime disegnate di Impostazioni → Aspetto: i colori VERI delle due
+     modalità, quindi non cambiano col tema */
+  --color-mini-notte: #1b1a18;
+  --color-mini-notte-riga: #3a3833;
+  --color-mini-notte-blocco: #e8d8c9;
+  --color-mini-giorno: #f4f1ec;
+  --color-mini-giorno-riga: #e0d9ce;
+  --color-mini-giorno-blocco: #e5cfb8;
+
   /* Grafico: palette categoriale validata (fondo #262522 e #fdfcfa) */
   --color-chart-1: #cf7e4b;
   --color-chart-2: #5182c1;
@@ -170,7 +179,7 @@ body {
   .display { font-size: clamp(40px, 6vw, 64px); font-weight: 500; letter-spacing: -0.045em; line-height: 1; }
   .panel { background: var(--color-card); border-radius: 28px; padding: 32px; min-width: 0; }
   .panel-title { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; }
-  .block { border-radius: 28px; padding: 24px; color: var(--color-inchiostro); min-width: 0; }
+  .blocco { border-radius: 28px; padding: 24px; color: var(--color-inchiostro); min-width: 0; }
 
   /* Bottoni a pillola */
   .pill-btn {
@@ -241,7 +250,7 @@ body {
 
   @media (max-width: 640px) {
     .panel { padding: 20px; border-radius: 20px; }
-    .block { padding: 20px; border-radius: 20px; }
+    .blocco { padding: 20px; border-radius: 20px; }
   }
 }
 
@@ -249,3 +258,43 @@ body {
   .reveal { opacity: 0; transform: translateY(12px); animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; animation-delay: calc(var(--i, 0) * 70ms); }
   @keyframes rise { to { opacity: 1; transform: none; } }
 }
+
+/* Campi PrimeVue come quelli del mockup: pillola piena, senza bordo */
+.p-inputtext,
+.p-select,
+.p-datepicker-input {
+  min-height: 52px;
+  border-radius: 999px !important;
+  border: 0 !important;
+  background: var(--color-campo) !important;
+  color: var(--color-testo) !important;
+  box-shadow: none !important;
+  padding-inline: 18px !important;
+}
+.p-select { display: flex; align-items: center; padding-inline: 4px !important; }
+.p-select .p-select-label { padding-inline: 14px; }
+.p-inputtext:focus,
+.p-select.p-focus { box-shadow: 0 0 0 2px var(--color-anello) !important; }
+.p-inputnumber { width: 100%; }
+.p-select-overlay,
+.p-datepicker-panel {
+  background: var(--color-fondo-profondo) !important;
+  border: 0 !important;
+  border-radius: 20px !important;
+  box-shadow: var(--shadow-pop) !important;
+  color: var(--color-testo) !important;
+}
+.p-select-option.p-select-option-selected { background: var(--color-campo) !important; color: var(--color-testo) !important; }
+.p-toast-message { border-radius: 999px !important; }
+/* Toast come nel mockup: pillola crema, arancio per errori e avvisi */
+.p-toast-message {
+  background: var(--color-crema) !important;
+  color: var(--color-inchiostro) !important;
+  border: 0 !important;
+  box-shadow: var(--shadow-pop) !important;
+}
+.p-toast-message-error,
+.p-toast-message-warn { background: var(--color-arancio) !important; }
+.p-toast-message .p-toast-message-icon,
+.p-toast-message .p-toast-close-button,
+.p-toast-message .p-toast-detail { color: var(--color-inchiostro) !important; }

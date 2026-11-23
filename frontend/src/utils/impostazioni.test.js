@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   campiAi, chiaveImpostata, errorePassword, erroreProfilo, ordinaModelli, urlPerMotore,
 } from "./impostazioni.js";
+import { categoriaOmonima, dataRicorrenza, forzaPassword, nomeCategoria } from "./impostazioni.js";
 
 test("urlPerMotore: preset solo se vuoto o di un altro motore, mai sopra un indirizzo scritto a mano", () => {
   assert.equal(urlPerMotore("openrouter", ""), "https://openrouter.ai/api/v1");
@@ -50,4 +51,26 @@ test("validazione profilo e password", () => {
   assert.equal(errorePassword("vecchia1", "abc"), "La nuova password deve avere almeno 6 caratteri");
   assert.equal(errorePassword("stessa12", "stessa12"), "La nuova password è uguale a quella attuale");
   assert.equal(errorePassword("vecchia1", "nuova123"), null);
+});
+
+test("forza password su tre livelli", () => {
+  assert.equal(forzaPassword(""), 0);
+  assert.equal(forzaPassword("abc"), 1);
+  assert.equal(forzaPassword("abcdefgh"), 1);
+  assert.equal(forzaPassword("abcdefgh1"), 2);
+  assert.equal(forzaPassword("Abcdefgh12!x"), 3);
+});
+
+test("nomi delle categorie: maiuscola e doppioni", () => {
+  assert.equal(nomeCategoria("  spesa   grande "), "Spesa grande");
+  const cat = [{ documentId: "a", Nome: "Stipendio" }, { documentId: "b", Nome: "Spesa" }];
+  assert.equal(categoriaOmonima("stipendio", cat).documentId, "a");
+  assert.equal(categoriaOmonima("stipendio", cat, "a"), null, "sé stessa non conta");
+  assert.equal(categoriaOmonima("Benzina", cat), null);
+});
+
+test("giorno della ricorrenza: 31 non diventa 1", () => {
+  assert.equal(dataRicorrenza(31), "2000-01-31");
+  assert.equal(dataRicorrenza(5), "2000-01-05");
+  assert.equal(dataRicorrenza(0), "2000-01-01");
 });

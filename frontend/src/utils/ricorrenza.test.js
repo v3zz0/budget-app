@@ -32,3 +32,7 @@ test("quando", () => {
   assert.equal(quando(new Date(2026, 8, 13), oggi), "fra 3 giorni");
   assert.equal(quando(new Date(2026, 8, 25), oggi), "il 25 set");
 });
+
+test("in pausa: nessuna scadenza", () => {
+  assert.equal(prossimaScadenza({ Data: "2026-01-05", InPausa: true }, new Date(2026, 4, 1)), null);
+});

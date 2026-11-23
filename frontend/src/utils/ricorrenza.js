@@ -3,7 +3,7 @@ import { nomeMese } from "./budget.js";
 // Prossima scadenza di una transazione ricorrente.
 //
 // REPLICA la regola del cron backend `materializzaRicorrenti`
-// (budget-api/src/index.js): il giorno di riferimento è
+// (backend/src/ricorrenti.js): il giorno di riferimento è
 // `RicorrenzaTemporale || Data`, e se quel giorno nel mese non esiste (il 31
 // a febbraio) la scadenza scatta l'ultimo giorno del mese.
 // Se cambia una, cambiare l'altra.
@@ -19,8 +19,15 @@ const conClamp = (anno, mese, giorno) => {
   return new Date(d.getFullYear(), d.getMonth(), Math.min(giorno, ultimo));
 };
 
-/** Prossima scadenza a partire da `oggi`. Se cade oggi ritorna oggi. */
+/** Giorno del mese in cui scatta (1-31). */
+export const giornoRicorrenza = giornoRiferimento;
+
+/**
+ * Prossima scadenza a partire da `oggi`. Se cade oggi ritorna oggi.
+ * null se è in pausa: il cron non la registra (backend src/ricorrenti.js).
+ */
 export function prossimaScadenza(t, oggi = new Date()) {
+  if (t.InPausa) return null;
   const giorno = giornoRiferimento(t);
   const questoMese = conClamp(oggi.getFullYear(), oggi.getMonth() + 1, giorno);
   if (questoMese.getDate() >= oggi.getDate()) return questoMese;
