@@ -562,7 +562,8 @@ watch(
           </div>
 
           <div v-if="!entrata && !originale">
-            <input ref="inputFoto" type="file" accept="image/*" class="hidden" @change="scansiona" />
+            <!-- capture: sul telefono apre subito la fotocamera posteriore (lo scontrino si fotografa, non si cerca in galleria) -->
+            <input ref="inputFoto" type="file" accept="image/*" capture="environment" class="hidden" @change="scansiona" />
             <button
               type="button"
               class="flex h-12 w-full items-center justify-center gap-2 rounded-full text-[14.5px] font-medium shadow-[inset_0_0_0_1.5px_var(--color-inchiostro-linea)] hover:shadow-[inset_0_0_0_1.5px_var(--color-inchiostro)] disabled:opacity-60"
