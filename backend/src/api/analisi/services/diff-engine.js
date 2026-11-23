@@ -11,29 +11,79 @@ function diffGiorni(d1, d2) {
   return Math.abs((a - b) / (1000 * 60 * 60 * 24));
 }
 
+const { parole } = require('./auto-categoria')();
+
+// Tipo di una transazione del DB: dalla sua categoria (senza = uscita).
+const tipoDB = (t) => t.categorie?.Tipo || 'uscita';
+const tipoBanca = (t) => t.tipo || 'uscita';
+// Stessa descrizione "a occhio": almeno una parola significativa in comune.
+// Le parole di auto-categoria (4+ lettere, niente rumore bancario) più quelle
+// di 3 lettere, perché molti marchi sono corti ("Pieno Eni" ↔ "POS ENI 1234").
+const CORTE_RUMORE = new Set(['POS', 'EUR', 'VIA', 'DEL', 'DAL', 'PER', 'CON', 'SRL', 'SPA', 'SAS', 'SNC', 'THE', 'AND', 'NOV', 'DIC', 'GEN']);
+function chiavi(s) {
+  const out = parole(s);
+  for (const p of String(s || '').toUpperCase().replace(/[^A-ZÀ-Ù]+/g, ' ').split(' ')) {
+    if (p.length === 3 && !CORTE_RUMORE.has(p)) out.add(p);
+  }
+  return out;
+}
+function simili(a, b) {
+  const pa = chiavi(a);
+  for (const p of chiavi(b)) if (pa.has(p)) return true;
+  return false;
+}
+
 module.exports = () => ({
-  // Confronta transazioni estratte dal PDF con quelle nel DB
-  // Ritorna: { mancanti: [...transazioni in banca ma non nel DB] }
+  /**
+   * Confronta i movimenti della banca con le transazioni del DB (progetto.md §10).
+   * Un movimento si abbina solo a una transazione dello stesso tipo
+   * (addebito ↔ uscita, accredito ↔ entrata).
+   *
+   *   abbinati: stesso importo (±0,01) entro 3 giorni           [{ banca, app }]
+   *   diversi:  stesso movimento (entro 3 giorni, descrizione
+   *             simile) ma cifra diversa                          [{ banca, app }]
+   *   mancanti: in banca, non nell'app                            [banca]
+   *   soloApp:  nell'app, non in banca                            [app]
+   *
+   * Chi chiama toglie prima le transazioni in contanti: non passano dal conto.
+   */
   confronta(transazioniBanca, transazioniDB) {
-    const mancanti = [];
     const usate = new Set();
+    const abbinati = [];
+    const restano = [];
 
-    for (const tBanca of transazioniBanca) {
-      const idx = transazioniDB.findIndex((tDB, i) => {
-        if (usate.has(i)) return false;
-        const stessoImporto = Math.abs(Number(tDB.Importo) - Number(tBanca.importo)) < TOLL_IMPORTO;
-        const stessaData = diffGiorni(tDB.Data, tBanca.data) <= TOLL_GIORNI;
-        return stessoImporto && stessaData;
-      });
-
+    for (const b of transazioniBanca) {
+      const idx = transazioniDB.findIndex((t, i) =>
+        !usate.has(i) &&
+        tipoDB(t) === tipoBanca(b) &&
+        Math.abs(Number(t.Importo) - Number(b.importo)) < TOLL_IMPORTO &&
+        diffGiorni(t.Data, b.data) <= TOLL_GIORNI);
       if (idx >= 0) {
         usate.add(idx);
+        abbinati.push({ banca: b, app: transazioniDB[idx] });
       } else {
-        mancanti.push(tBanca);
+        restano.push(b);
       }
     }
 
-    return { mancanti };
+    const diversi = [];
+    const mancanti = [];
+    for (const b of restano) {
+      const idx = transazioniDB.findIndex((t, i) =>
+        !usate.has(i) &&
+        tipoDB(t) === tipoBanca(b) &&
+        diffGiorni(t.Data, b.data) <= TOLL_GIORNI &&
+        simili(t.Descrizione, b.descrizione));
+      if (idx >= 0) {
+        usate.add(idx);
+        diversi.push({ banca: b, app: transazioniDB[idx] });
+      } else {
+        mancanti.push(b);
+      }
+    }
+
+    const soloApp = transazioniDB.filter((_, i) => !usate.has(i));
+    return { abbinati, diversi, mancanti, soloApp };
   },
 
   // Calcola sforamenti per categoria del wallet

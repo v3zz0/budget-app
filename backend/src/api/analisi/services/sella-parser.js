@@ -92,10 +92,15 @@ module.exports = () => ({
         : [carta[1], carta[2], carta[3]];
 
       const importo = toNumero(grezzo);
-      // Solo le spese: accrediti e storni positivi non sono transazioni dell'app.
-      if (importo >= 0) continue;
+      if (importo === 0) continue;
 
       const pulita = descrizione.replace(/\s+/g, ' ').trim();
+      // Gli accrediti si confrontano con le entrate dell'app (progetto.md §10):
+      // si marcano col tipo. Le spese restano com'erano (senza tipo = uscita).
+      if (importo > 0) {
+        movimenti.push({ data: toIso(data), importo, descrizione: pulita, tipo: 'entrata', addebitoCarta: false });
+        continue;
+      }
       movimenti.push({
         data: toIso(data),
         importo: Math.abs(importo),

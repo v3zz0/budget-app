@@ -18,6 +18,8 @@
 //      consigli contano solo le uscite
 //  11. foto profilo ridotta sul server, avatar non scrivibile da PUT
 //  12. ricorrenti in pausa: il cron non le registra (anche i template NULL sì)
+//  14. analisi: CSV letto senza AI, quattro elenchi con le entrate, solo i
+//      propri portafogli
 //  13. salvadanaio a cartelle: migrazione, versa, sposta, saldi mai sotto
 //      zero (verificati dal server), cascata, accesso solo al proprio wallet
 //
@@ -84,7 +86,7 @@ async function main() {
   try {
     assert.strictEqual(app.db.config.connection.client, 'sqlite', 'ABORT: il database non è sqlite');
     await prova(app, porta);
-    console.log('OK: sicurezza multi-utente (salvadanaio, entrate, foto profilo, ricorrenti in pausa, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
+    console.log('OK: sicurezza multi-utente (analisi, salvadanaio, entrate, foto profilo, ricorrenti in pausa, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
   } finally {
     await app.destroy();
     fs.rmSync(appDir, { recursive: true, force: true });
@@ -441,6 +443,35 @@ async function prova(app, porta) {
     assert.strictEqual(await conta(MOV, { salvadanaio: null }), 0, 'nessun movimento orfano');
     assert.ok((await conta(CART)) < prima.c && (await conta(MOV)) < prima.m);
     await D(W).delete({ documentId: wb });
+  }
+
+  // ── 14. Analisi estratto conto ─────────────────────────────────────────────
+  {
+    const wa = (await http('POST', '/api/wallets', jAda, { data: { Nome: 'WA', Budget: 500 } })).body.data.documentId;
+    const cu = await D(C).create({ data: { Nome: 'Carburante', Budget_categoria: 100, wallet: wa } });
+    const ce = await D(C).create({ data: { Nome: 'Stipendio', Tipo: 'entrata', wallet: wa } });
+    const tx = (Importo, Data, Descrizione, c, extra = {}) => D(T).create({ data: { Importo, Data, Descrizione, categorie: c.documentId, ...extra } });
+    await tx(112, '2025-03-10', 'Pieno Eni', cu);
+    await tx(74, '2025-03-14', 'Concerto', cu);
+    await tx(1800, '2025-03-27', 'Stipendio', ce);
+    await tx(20, '2025-03-15', 'Contanti al bar', cu, { Contanti: true });
+    const csv = 'Data;Descrizione;Importo\n10/03/2025;POS ENI STATION;-121,50\n08/03/2025;BONIFICO DA MARCO ROSSI;+150,00\n27/03/2025;RETRIBUZIONE MARZO;+1.800,00\n';
+    const form = (wallet) => {
+      const f = new FormData();
+      f.append('walletId', wallet);
+      f.append('mese', '2025-03');
+      f.append('pdf', new Blob([csv], { type: 'text/csv' }), 'marzo.csv');
+      return f;
+    };
+    r = await http('POST', '/api/analisi-estratto-conto', jAda, form(wa));
+    assert.strictEqual(r.status, 200, `analisi: ${JSON.stringify(r.body?.error)}`);
+    assert.strictEqual(r.body.fonte, 'csv', 'CSV letto senza AI');
+    assert.deepStrictEqual(r.body.mancanti.map((m) => [m.descrizione, m.tipo]), [['BONIFICO DA MARCO ROSSI', 'entrata']]);
+    assert.deepStrictEqual(r.body.soloApp.map((t) => t.descrizione), ['Concerto'], 'i contanti non risultano "solo app"');
+    assert.deepStrictEqual(r.body.diversi.map((x) => [x.app.importo, x.banca.importo]), [[112, 121.5]]);
+    assert.deepStrictEqual(r.body.abbinati.map((x) => x.app.descrizione), ['Stipendio'], 'l\'accredito si abbina all\'entrata');
+    assert.strictEqual((await http('POST', '/api/analisi-estratto-conto', jBob, form(wa))).status, 404, 'bob non analizza il wallet di ada');
+    await D(W).delete({ documentId: wa });
   }
 
   // ── 6. Accesso chiuso: gli account li crea solo l'amministratore ───────────

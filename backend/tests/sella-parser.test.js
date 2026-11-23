@@ -6,6 +6,8 @@
 
 const assert = require('node:assert');
 const parser = require('../src/api/analisi/services/sella-parser')();
+// Le spese (le asserzioni storiche); gli accrediti tornano con tipo 'entrata'.
+const uscite = (t) => parser.parse(t).filter((x) => x.tipo !== 'entrata');
 
 // Estratto reale ridotto ai casi che contano.
 const TESTO = `
@@ -24,7 +26,8 @@ Totale movimenti Euro -506,82
 Saldo al 14/08/2026 (*) Euro 665,81
 `;
 
-const m = parser.parse(TESTO);
+const m = uscite(TESTO);
+assert.deepStrictEqual(parser.parse(TESTO).filter((x) => x.tipo === 'entrata').map((x) => x.importo), [1487], 'l\'accredito è un\'entrata');
 
 // Le due entrate (+1.487,00) e le righe di totale/saldo non sono movimenti di spesa.
 assert.strictEqual(m.length, 4, `attesi 4 movimenti, trovati ${m.length}`);
@@ -76,10 +79,14 @@ const SENZA_SPAZI = [
   '2600139997123709/07/202609/07/2026RETRIBUZIONE GIUGNOEUR+1.487,00',
 ].join('\n');
 
-const s = parser.parse(SENZA_SPAZI);
-
-// Le due righe con importo positivo sono accrediti: non sono spese.
-assert.strictEqual(s.length, 3, `attesi 3 movimenti, trovati ${s.length}`);
+const tutti = parser.parse(SENZA_SPAZI);
+// Le due righe con importo positivo sono accrediti: tornano come entrate.
+assert.deepStrictEqual(
+  tutti.filter((m) => m.tipo === 'entrata').map((m) => [m.importo, m.descrizione]),
+  [[52.73, 'POS 2106 CARDHOLDER ADJUSTMENT'], [1487, 'RETRIBUZIONE GIUGNO']],
+);
+const s = tutti.filter((m) => m.tipo !== 'entrata');
+assert.strictEqual(s.length, 3, `attese 3 uscite, trovate ${s.length}`);
 
 assert.deepStrictEqual(s[0], {
   data: '2026-07-29',
@@ -162,7 +169,7 @@ SANT'ANTONINO
 Totale speso al 16/08/2026 08:17:31 770,72
 `;
 
-const c = parser.parse(CARTA);
+const c = uscite(CARTA);
 
 assert.strictEqual(c.length, 15, `attesi 15 movimenti carta, trovati ${c.length}`);
 
@@ -200,7 +207,7 @@ const CARTA_SENZA_SPAZI = [
   '11/07/2026-88,70JustEatItaly MILANOEUR-88,70',
 ].join('\n');
 
-const cs = parser.parse(CARTA_SENZA_SPAZI);
+const cs = uscite(CARTA_SENZA_SPAZI);
 assert.strictEqual(cs.length, 2, `attesi 2 movimenti, trovati ${cs.length}`);
 assert.strictEqual(cs[0].importo, 71.5);
 assert.strictEqual(cs[0].descrizione, 'DALLA LELLA AL MARE SRL RIMINI');
@@ -216,7 +223,7 @@ const CONTO_CON_VISA = [
   '26001435096899 11/07/2026 11/07/2026 JustEatItaly MILANO EUR -88,70',
 ].join('\n');
 
-const v = parser.parse(CONTO_CON_VISA);
+const v = uscite(CONTO_CON_VISA);
 assert.strictEqual(v.length, 2, 'entrambi i movimenti vanno letti, poi si filtra');
 assert.strictEqual(v[0].addebitoCarta, true, 'addebito carta non riconosciuto');
 assert.strictEqual(v[1].addebitoCarta, false, 'spesa normale marcata per sbaglio');

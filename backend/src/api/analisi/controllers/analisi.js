@@ -8,6 +8,7 @@ const pdfParserFactory = require('../services/pdf-parser');
 const llmFactory = require('../services/llm-client');
 const diffFactory = require('../services/diff-engine');
 const sellaFactory = require('../services/sella-parser');
+const csvParser = require('../services/csv-parser')();
 const autoCategoriaFactory = require('../services/auto-categoria');
 const { verificaUrlAi } = require('../services/url-ai');
 
@@ -20,6 +21,13 @@ const autoCategoria = autoCategoriaFactory();
 // Un anno copre le spese stagionali (bollette, assicurazione, vacanze) senza
 // tirarsi dietro archeologia.
 const MESI_STORICO = 12;
+
+// Forme compatte per il client
+const daApp = (t) => ({
+  documentId: t.documentId, data: t.Data, importo: Number(t.Importo), descrizione: t.Descrizione || '',
+  categoria: t.categorie?.Nome || '', icona: t.categorie?.icona || '', tipo: t.categorie?.Tipo || 'uscita',
+});
+const daBanca = (b) => ({ data: b.data, importo: Number(b.importo), descrizione: b.descrizione, tipo: b.tipo || 'uscita' });
 
 // Verifica che il wallet sia dell'utente che sta chiamando.
 // Senza questo controllo un utente autenticato potrebbe passare il walletId di
@@ -163,6 +171,7 @@ module.exports = {
           Data: { $gte: primoGiorno, $lte: ultimoGiorno },
         },
         populate: ['categorie'],
+        limit: -1,
       });
 
       // 5. Estrazione movimenti, UN DOCUMENTO ALLA VOLTA.
@@ -177,9 +186,13 @@ module.exports = {
       const avvisiExtra = [];
       for (const testo of testi) {
         const daParser = sellaParser.parse(testo);
+        const daCsv = daParser.length ? [] : csvParser.parse(testo);
         if (daParser.length) {
           transazioniBanca.push(...daParser);
           fonti.push('sella-parser');
+        } else if (daCsv.length) {
+          transazioniBanca.push(...daCsv);
+          fonti.push('csv');
         } else {
           // Perché il parser non l'ha riconosciuto? Senza queste righe il
           // fallback all'AI è invisibile: l'analisi "funziona" ma ci mette
@@ -232,22 +245,22 @@ module.exports = {
           (giroconti.length ? `, ${giroconti.length} addebiti carta esclusi` : '')
       );
 
-      // 6. Diff e sforamenti
-      // I contanti non passano dal conto: escluderli dal confronto, altrimenti
-      // rubano il match a un movimento bancario vero e lo nascondono dai mancanti.
-      // Restano invece negli sforamenti: sono spesa a tutti gli effetti.
-      const daConfrontare = transazioniDB.filter((t) => !t.Contanti);
-      let { mancanti } = diffEngine.confronta(transazioniConto, daConfrontare);
-      // Solo le categorie del portafoglio scelto: calcolaSforamenti filtra già
-      // le transazioni per categoria, quindi passargliele tutte è innocuo.
+      // 6. Confronto e sforamenti
+      // I contanti non passano dal conto: fuori dal confronto, altrimenti
+      // rubano l'abbinamento a un movimento vero. Restano negli sforamenti.
+      // Versamenti in cassa e rimborsi del condiviso non sono né entrate né uscite.
+      const confrontabile = (t) => !t.Contanti && ['uscita', 'entrata'].includes(t.categorie?.Tipo || 'uscita');
+      const esito = diffEngine.confronta(transazioniConto, transazioniDB.filter(confrontabile));
+      let mancanti = esito.mancanti.map((m) => ({ ...m, tipo: m.tipo || 'uscita' }));
       const sforamenti = diffEngine.calcolaSforamenti(transazioniDB, categorieWallet);
 
-      // Il parser estrae i numeri ma non sa cosa siano: la categoria va deciso
-      // in due passaggi, dal più economico al più costoso.
+      // La categoria va decisa in due passaggi, dal più economico al più
+      // costoso, e SEPARATAMENTE per uscite ed entrate: un accredito si
+      // suggerisce solo tra le categorie di entrata, una spesa tra le uscite.
+      const perTipo = (tipo) => categorie.filter((c) => (c.Tipo || 'uscita') === tipo);
       //
       // 6a. Prima lo storico: se quel negozio l'hai già categorizzato, la
-      // risposta è nel database e costa una query. Gratis, immediato,
-      // deterministico, e migliora ogni volta che correggi un suggerimento.
+      // risposta è nel database e costa una query.
       if (mancanti.some((m) => !m.categoriaSuggerita)) {
         try {
           const dalloStorico = new Date(Date.UTC(
@@ -265,33 +278,47 @@ module.exports = {
             limit: -1,
           });
 
-          const esito = autoCategoria.suggerisci(mancanti, storiche);
-          mancanti = esito.movimenti;
-          if (esito.indovinati) {
-            strapi.log.info(
-              `Analisi: ${esito.indovinati}/${mancanti.length} categorie dedotte dallo storico (${storiche.length} transazioni), senza AI`
+          let indovinati = 0;
+          const nuovi = [];
+          for (const tipo of ['uscita', 'entrata']) {
+            const r = autoCategoria.suggerisci(
+              mancanti.filter((m) => m.tipo === tipo),
+              storiche.filter((t) => (t.categorie?.Tipo || 'uscita') === tipo),
             );
+            indovinati += r.indovinati;
+            nuovi.push(...r.movimenti);
+          }
+          mancanti = nuovi;
+          if (indovinati) {
+            strapi.log.info(`Analisi: ${indovinati}/${mancanti.length} categorie dedotte dallo storico, senza AI`);
           }
         } catch (e) {
-          // Se lo storico non si carica si passa all'LLM come prima: è una
-          // scorciatoia, non un requisito.
+          // Se lo storico non si carica si passa all'LLM come prima.
           strapi.log.warn(`Analisi: storico non consultato (${e.message})`);
         }
       }
 
-      // 6b. Poi l'LLM, ma solo su quello che è rimasto scoperto — i negozi
-      // mai visti. Il passo è una rifinitura: i numeri del report li ha già
-      // prodotti il parser, quindi se il modello è lento o giù si consegna il
-      // report senza suggerimenti invece di buttare via tutto il lavoro.
-      // Prima una qualsiasi di queste chiamate faceva fallire l'intera analisi.
+      // 6b. Poi l'LLM, solo su quello che è rimasto scoperto. È una
+      // rifinitura: se il modello è lento o giù si consegna il report senza.
       if (mancanti.some((m) => !m.categoriaSuggerita)) {
         try {
-          mancanti = await llm.suggerisciCategorie(mancanti, categorie);
+          const nuovi = [];
+          for (const tipo of ['uscita', 'entrata']) {
+            const gruppo = mancanti.filter((m) => m.tipo === tipo);
+            const daFare = gruppo.some((m) => !m.categoriaSuggerita) && perTipo(tipo).length;
+            nuovi.push(...(daFare ? await llm.suggerisciCategorie(gruppo, perTipo(tipo)) : gruppo));
+          }
+          mancanti = nuovi.map((m, i) => ({ ...m, tipo: m.tipo || mancanti[i]?.tipo || 'uscita' }));
         } catch (e) {
           strapi.log.warn(`Analisi: categorie non suggerite (${e.message})`);
           avvisiExtra.push('Categorie non suggerite: il modello non ha risposto in tempo.');
         }
       }
+      // Un suggerimento del tipo sbagliato (dall'LLM) non vale.
+      mancanti = mancanti.map((m) => {
+        const c = categorie.find((x) => x.Nome === m.categoriaSuggerita);
+        return c && (c.Tipo || 'uscita') !== m.tipo ? { ...m, categoriaSuggerita: null } : m;
+      });
 
       const totaleSpeso = sforamenti.reduce((s, c) => s + c.speso, 0);
       const totaleBudget = sforamenti.reduce((s, c) => s + c.budget, 0);
@@ -334,7 +361,13 @@ module.exports = {
         validazione: validazioneFinale,
         periodoEstratto,
         sforamenti,
+        // I quattro elenchi del confronto (progetto.md §10)
         mancanti,
+        soloApp: esito.soloApp.map(daApp),
+        diversi: esito.diversi.map((x) => ({ app: daApp(x.app), banca: daBanca(x.banca) })),
+        abbinati: esito.abbinati.map((x) => ({ app: daApp(x.app), banca: daBanca(x.banca) })),
+        inBanca: transazioniConto.length,
+        modello: llm.modello,
         // Tutte le categorie dell'utente, col portafoglio di appartenenza:
         // servono all'app per registrare un movimento mancante nella categoria
         // giusta anche quando sta in un altro portafoglio.
@@ -342,6 +375,8 @@ module.exports = {
           documentId: c.documentId,
           nome: c.Nome,
           icona: c.icona,
+          tipo: c.Tipo || 'uscita',
+          nascosta: !!c.Nascosta,
           wallet: c.wallet?.Nome || '',
         })),
         totale: {

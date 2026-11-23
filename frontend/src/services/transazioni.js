@@ -46,3 +46,6 @@ export const interrompiRicorrente = (id) =>
 export const trovaTransazione = async (id) =>
   (await api.get(`${URL}/${id}`, { params: { populate: { categorie: { fields: ["Nome", "Tipo", "Nascosta", "icona"] } } } }))
     .data.data;
+
+/** Modifica di singoli campi (Analisi: "Era in contanti", "Usa importo banca"). */
+export const aggiornaCampi = (id, campi) => api.put(`${URL}/${id}`, { data: campi });
