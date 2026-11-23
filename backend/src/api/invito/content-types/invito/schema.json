@@ -1,0 +1,20 @@
+{
+  "kind": "collectionType",
+  "collectionName": "inviti",
+  "info": {
+    "singularName": "invito",
+    "pluralName": "inviti",
+    "displayName": "Invito",
+    "description": "Invito a un portafoglio condiviso, verso un utente GIÀ esistente (niente email: si accetta dentro l'app)"
+  },
+  "options": { "draftAndPublish": false },
+  "pluginOptions": {},
+  "attributes": {
+    "email": { "type": "email", "required": true },
+    "stato": { "type": "enumeration", "enum": ["in_attesa", "accettato", "rifiutato", "annullato"], "default": "in_attesa" },
+    "scadenza": { "type": "date" },
+    "wallet": { "type": "relation", "relation": "manyToOne", "target": "api::wallet.wallet" },
+    "da": { "type": "relation", "relation": "manyToOne", "target": "plugin::users-permissions.user" },
+    "a": { "type": "relation", "relation": "manyToOne", "target": "plugin::users-permissions.user" }
+  }
+}

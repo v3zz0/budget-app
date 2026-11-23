@@ -45,6 +45,30 @@
     "InPausa": {
       "type": "boolean",
       "default": false
+    },
+    "pagatoDa": {
+      "type": "enumeration",
+      "enum": [
+        "creatore",
+        "membro",
+        "cassa"
+      ]
+    },
+    "quota": {
+      "type": "decimal"
+    },
+    "quotaCassa": {
+      "type": "decimal"
+    },
+    "creatoDa": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "modificatoDa": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
     }
   }
 }

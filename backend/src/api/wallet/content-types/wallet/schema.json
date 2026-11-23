@@ -40,6 +40,34 @@
     "escludiDaStatistiche": {
       "type": "boolean",
       "default": false
+    },
+    "condiviso": {
+      "type": "boolean",
+      "default": false
+    },
+    "membro": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "regolaTipo": {
+      "type": "enumeration",
+      "enum": [
+        "meta",
+        "proporzionale",
+        "personalizzata"
+      ],
+      "default": "meta"
+    },
+    "quotaCreatore": {
+      "type": "decimal",
+      "default": 0.5
+    },
+    "entrateCreatore": {
+      "type": "decimal"
+    },
+    "entrateMembro": {
+      "type": "decimal"
     }
   }
 }

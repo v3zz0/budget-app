@@ -1,6 +1,7 @@
 'use strict';
 
 const { createCoreController } = require('@strapi/strapi').factories;
+const { filtroWallet, POPULATE_ACCESSO, puoUsare } = require('../../../accesso');
 
 const UID = 'api::consiglio.consiglio';
 const CAT_UID = 'api::categorie.categorie';
@@ -9,10 +10,9 @@ const CAT_UID = 'api::categorie.categorie';
 async function consiglioDelloUtente(documentId, userId) {
   const c = await strapi.documents(UID).findOne({
     documentId,
-    populate: { categorie: { populate: { wallet: { populate: { users_permissions_user: true } } } } },
+    populate: { categorie: { populate: { wallet: { populate: POPULATE_ACCESSO } } } },
   });
-  const proprietario = c?.categorie?.wallet?.users_permissions_user?.id;
-  return proprietario === userId ? c : null;
+  return c && puoUsare(c.categorie?.wallet, userId) ? c : null;
 }
 
 module.exports = createCoreController(UID, ({ strapi }) => ({
@@ -25,7 +25,7 @@ module.exports = createCoreController(UID, ({ strapi }) => ({
     ctx.query.filters = {
       $and: [
         ctx.query.filters || {},
-        { categorie: { wallet: { users_permissions_user: { id: { $eq: userId } } } } },
+        { categorie: { wallet: filtroWallet(userId) } },
       ],
     };
     return super.find(ctx);

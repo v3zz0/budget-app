@@ -20,6 +20,9 @@
 //  12. ricorrenti in pausa: il cron non le registra (anche i template NULL sì)
 //  14. analisi: CSV letto senza AI, quattro elenchi con le entrate, solo i
 //      propri portafogli
+//  15. portafoglio condiviso: inviti, il membro vede SOLO il condiviso (mai i
+//      portafogli personali di chi l'ha creato), campi del condiviso decisi
+//      dal server, elimina solo il creatore, uscita solo a conti pari
 //  13. salvadanaio a cartelle: migrazione, versa, sposta, saldi mai sotto
 //      zero (verificati dal server), cascata, accesso solo al proprio wallet
 //
@@ -86,7 +89,7 @@ async function main() {
   try {
     assert.strictEqual(app.db.config.connection.client, 'sqlite', 'ABORT: il database non è sqlite');
     await prova(app, porta);
-    console.log('OK: sicurezza multi-utente (analisi, salvadanaio, entrate, foto profilo, ricorrenti in pausa, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
+    console.log('OK: sicurezza multi-utente (condiviso, analisi, salvadanaio, entrate, foto profilo, ricorrenti in pausa, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
   } finally {
     await app.destroy();
     fs.rmSync(appDir, { recursive: true, force: true });
@@ -472,6 +475,81 @@ async function prova(app, porta) {
     assert.deepStrictEqual(r.body.abbinati.map((x) => x.app.descrizione), ['Stipendio'], 'l\'accredito si abbina all\'entrata');
     assert.strictEqual((await http('POST', '/api/analisi-estratto-conto', jBob, form(wa))).status, 404, 'bob non analizza il wallet di ada');
     await D(W).delete({ documentId: wa });
+  }
+
+  // ── 15. Portafoglio condiviso ──────────────────────────────────────────────
+  {
+    const I = 'api::invito.invito';
+    // ada: un condiviso (WC) e il personale W2 già esistente; bob: membro di WC
+    const wc = (await http('POST', '/api/wallets', jAda, { data: { Nome: 'Casa', Budget: 1500, membro: bob.id, condiviso: true } })).body.data;
+    assert.strictEqual(wc.condiviso, false, 'condiviso/membro non si impostano dal client');
+    const catCasa = (await http('POST', '/api/categories', jAda, { data: { Nome: 'Affitto', Budget_categoria: 800, wallet: wc.documentId } })).body.data;
+    const catW2 = w2.cat[1];
+    const txW2 = (await D(T).findMany({ filters: { categorie: { documentId: catW2.documentId } } }))[0];
+
+    // Inviti: niente sé stessi, niente email sconosciute, niente inviti del membro
+    assert.strictEqual((await http('POST', '/api/inviti', jAda, { wallet: wc.documentId, email: 'ada@example.com' })).status, 400, 'non si invita sé stessi');
+    assert.strictEqual((await http('POST', '/api/inviti', jAda, { wallet: wc.documentId, email: 'nessuno@example.com' })).status, 404);
+    assert.strictEqual((await http('POST', '/api/inviti', jBob, { wallet: wc.documentId, email: 'bob@example.com' })).status, 404, 'bob non invita nel wallet di ada');
+    r = await http('POST', '/api/inviti', jAda, { wallet: wc.documentId, email: 'BOB@example.com' });
+    assert.strictEqual(r.status, 200, `invito: ${JSON.stringify(r.body?.error)}`);
+    const invito = r.body.id;
+    assert.strictEqual((await http('POST', '/api/inviti', jAda, { wallet: wc.documentId, email: 'bob@example.com' })).status, 400, 'un invito alla volta');
+    r = await http('GET', '/api/inviti', jBob);
+    assert.deepStrictEqual(r.body.ricevuti.map((i) => i.wallet.nome), ['Casa']);
+    const carla2 = await nuovoUtente('carla2');
+    assert.strictEqual((await http('POST', `/api/inviti/${invito}/accetta`, jwt(carla2))).status, 404, 'solo il destinatario accetta');
+    assert.strictEqual((await http('POST', `/api/inviti/${invito}/accetta`, jBob)).status, 200);
+    assert.strictEqual((await http('POST', '/api/inviti', jAda, { wallet: wc.documentId, email: 'carla2@example.com' })).status, 400, 'una persona sola');
+
+    // Bob vede il condiviso e i suoi, MAI i personali di ada
+    r = await http('GET', '/api/wallets', jBob);
+    assert.deepStrictEqual(r.body.data.map((w) => w.Nome).sort(), ['Bob', 'Casa'].filter((n) => n !== 'Bob' || r.body.data.some((w) => w.Nome === 'Bob')).sort());
+    assert.ok(!r.body.data.some((w) => w.documentId === w2.w.documentId), 'W2 di ada invisibile a bob');
+    const casa = r.body.data.find((w) => w.Nome === 'Casa');
+    assert.strictEqual(casa.users_permissions_user.email, undefined, 'dell\'altra persona niente email');
+    assert.strictEqual(casa.membro.username, 'bob');
+    assert.strictEqual((await http('GET', `/api/wallets/${w2.w.documentId}`, jBob)).status, 404);
+    assert.strictEqual((await http('GET', `/api/categories/${catW2.documentId}`, jBob)).status, 404);
+    assert.strictEqual((await http('GET', `/api/transazionis/${txW2.documentId}`, jBob)).status, 404);
+    assert.strictEqual((await http('PUT', `/api/transazionis/${txW2.documentId}`, jBob, { data: { Importo: 1 } })).status, 404);
+    assert.strictEqual((await http('DELETE', `/api/categories/${catW2.documentId}`, jBob)).status, 404);
+    assert.strictEqual((await http('GET', `/api/salvadanai?wallet=${w2.w.documentId}`, jBob)).status, 404);
+    r = await http('GET', `/api/transazionis?filters[categorie][wallet][documentId][$eq]=${w2.w.documentId}`, jBob);
+    assert.strictEqual(r.body.data.length, 0, 'filtrare per un wallet altrui non restituisce nulla');
+    r = await http('GET', '/api/categories', jBob);
+    assert.ok(r.body.data.every((c) => c.documentId !== catW2.documentId), 'nessuna categoria dei personali di ada');
+    assert.strictEqual((await http('GET', `/api/categories/${catCasa.documentId}`, jBob)).status, 200, 'le categorie del condiviso sì');
+    // e non può spostare una transazione del condiviso in una categoria personale di ada
+    r = await http('POST', '/api/transazionis', jBob, { data: { Importo: 84, Data: '2026-11-20', Descrizione: 'cena', categorie: catCasa.documentId, quotaCassa: 0.9, creatoDa: ada.id } });
+    assert.strictEqual(r.status, 201, `tx bob: ${JSON.stringify(r.body?.error)}`);
+    const txBob = await q(T).findOne({ where: { documentId: r.body.data.documentId }, populate: { creatoDa: true } });
+    assert.deepStrictEqual([txBob.creatoDa.id, txBob.pagatoDa, Number(txBob.quota), Number(txBob.quotaCassa)], [bob.id, 'membro', 0.5, 0.5], 'creatoDa, pagatoDa e quotaCassa dal server');
+    assert.strictEqual((await http('PUT', `/api/transazionis/${txBob.documentId}`, jBob, { data: { categorie: catW2.documentId } })).status, 403);
+    r = await http('PUT', `/api/transazionis/${txBob.documentId}`, jAda, { data: { Importo: 90, quotaCassa: 0.9 } });
+    const dopo = await q(T).findOne({ where: { id: txBob.id }, populate: { modificatoDa: true } });
+    assert.strictEqual(dopo.modificatoDa.id, ada.id, 'modificatoDa');
+    assert.strictEqual(Number(dopo.quotaCassa), 0.5, 'quotaCassa non si riscrive: la regola non è retroattiva');
+
+    // Il membro non elimina il condiviso né ne cambia i membri
+    assert.strictEqual((await http('DELETE', `/api/wallets/${wc.documentId}`, jBob)).status, 403);
+    await http('PUT', `/api/wallets/${wc.documentId}`, jBob, { data: { membro: null, users_permissions_user: bob.id, regolaTipo: 'personalizzata', quotaCreatore: 0.7 } });
+    const wcDb = await q(W).findOne({ where: { documentId: wc.documentId }, populate: { users_permissions_user: true, membro: true } });
+    assert.deepStrictEqual([wcDb.users_permissions_user.id, wcDb.membro.id, Number(wcDb.quotaCreatore)], [ada.id, bob.id, 0.7]);
+
+    // Esci solo a conti pari: bob ha pagato 90 a metà → ada gli deve 45
+    r = await http('POST', `/api/portafogli/${wc.documentId}/esci`, jBob);
+    assert.strictEqual(r.status, 400, 'conto aperto: non si esce');
+    const catRimb = await q(C).findOne({ where: { wallet: { id: wcDb.id }, Tipo: 'rimborso' } });
+    assert.ok(catRimb && catRimb.Nascosta, 'categorie di sistema create all\'accettazione');
+    await http('POST', '/api/transazionis', jAda, { data: { Importo: 45, Data: '2026-11-21', categorie: catRimb.documentId, pagatoDa: 'creatore' } });
+    assert.strictEqual((await http('POST', `/api/portafogli/${wc.documentId}/esci`, jAda)).status, 400, 'il creatore non esce');
+    assert.strictEqual((await http('POST', `/api/portafogli/${wc.documentId}/esci`, jBob)).status, 200, 'a conti pari si esce');
+    assert.strictEqual((await http('GET', `/api/wallets/${wc.documentId}`, jBob)).status, 404, 'uscito: non lo vede più');
+    assert.strictEqual((await http('GET', `/api/wallets/${wc.documentId}`, jAda)).status, 200, 'resta a chi l\'ha creato');
+    await D(W).delete({ documentId: wc.documentId });
+    assert.strictEqual(await conta(I, { wallet: null }), 0, 'gli inviti spariscono col wallet');
+    await D(USER).delete({ documentId: carla2.documentId });
   }
 
   // ── 6. Accesso chiuso: gli account li crea solo l'amministratore ───────────

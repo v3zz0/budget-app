@@ -91,7 +91,7 @@ async function stato(strapi, wallet) {
       mesi.set(m.Mese, x);
     }
     perCartella.get(cid)?.push({
-      id: m.documentId, importo, data: m.Data, nota: m.Nota || '', mese: m.Mese || null,
+      id: m.documentId, importo, data: m.Data, nota: m.Nota || '', mese: m.Mese || null, chi: m.Chi || null,
       daMese: m.Provenienza?.Mese || null,
     });
   }
@@ -177,7 +177,7 @@ async function eliminaCartella(strapi, wallet, documentId) {
  * daMese = "AAAA-MM": i soldi arrivano dai Risparmi mensili di quel mese
  * (due movimenti, stessa transazione); il totale del wallet non cambia.
  */
-async function movimento(strapi, wallet, documentId, { importo, nota, daMese, data }) {
+async function movimento(strapi, wallet, documentId, { importo, nota, daMese, data, chi }, mioRuolo = null) {
   const c = await cartellaDelWallet(strapi, documentId, wallet.id);
   if (c.Standard) throw new Errore('Nei Risparmi mensili si imposta il risparmio del mese');
   const segno = Number(importo) < 0 ? -1 : 1;
@@ -201,8 +201,10 @@ async function movimento(strapi, wallet, documentId, { importo, nota, daMese, da
         data: { Importo: -valore, Data: giorno, Mese: daMese, Nota: `→ ${c.Nome}`, salvadanaio: standard.id },
       });
     }
+    // Condiviso: chi ha versato o prelevato (default: chi registra)
+    const Chi = wallet.condiviso ? (['creatore', 'membro'].includes(chi) ? chi : mioRuolo || 'creatore') : null;
     const m = await strapi.db.query(MOV).create({
-      data: { Importo: segno * valore, Data: giorno, Nota: testo, salvadanaio: c.id, ...(provenienza && { Provenienza: provenienza.id }) },
+      data: { Importo: segno * valore, Data: giorno, Nota: testo, Chi, salvadanaio: c.id, ...(provenienza && { Provenienza: provenienza.id }) },
     });
     return m.documentId;
   });

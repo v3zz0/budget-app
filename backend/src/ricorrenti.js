@@ -65,6 +65,10 @@ async function materializzaRicorrenti(strapi, oggi = new Date()) {
         Data: `${anno}-${mese}-${giorno}`,
         TransazioneRicorrente: false, // istanza materializzata, non un nuovo template
         Contanti: t.Contanti || false, // una ricorrente in contanti resta in contanti
+        // Condiviso: stesso pagatore e stesse quote del template
+        pagatoDa: t.pagatoDa ?? null,
+        quota: t.quota ?? null,
+        quotaCassa: t.quotaCassa ?? null,
         categorie: t.categorie.documentId,
       },
     });

@@ -7,14 +7,44 @@
     "displayName": "Movimento del salvadanaio",
     "description": "Positivo = versamento, negativo = prelievo. Mese (AAAA-MM) solo nella cartella standard."
   },
-  "options": { "draftAndPublish": false },
+  "options": {
+    "draftAndPublish": false
+  },
   "pluginOptions": {},
   "attributes": {
-    "Importo": { "type": "decimal", "required": true },
-    "Data": { "type": "date", "required": true },
-    "Nota": { "type": "string", "maxLength": 120 },
-    "Mese": { "type": "string", "maxLength": 7 },
-    "salvadanaio": { "type": "relation", "relation": "manyToOne", "target": "api::cartella.cartella", "inversedBy": "movimenti" },
-    "Provenienza": { "type": "relation", "relation": "oneToOne", "target": "api::movimento-salvadanaio.movimento-salvadanaio" }
+    "Importo": {
+      "type": "decimal",
+      "required": true
+    },
+    "Data": {
+      "type": "date",
+      "required": true
+    },
+    "Nota": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "Mese": {
+      "type": "string",
+      "maxLength": 7
+    },
+    "salvadanaio": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::cartella.cartella",
+      "inversedBy": "movimenti"
+    },
+    "Provenienza": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::movimento-salvadanaio.movimento-salvadanaio"
+    },
+    "Chi": {
+      "type": "enumeration",
+      "enum": [
+        "creatore",
+        "membro"
+      ]
+    }
   }
 }

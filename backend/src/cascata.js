@@ -13,6 +13,7 @@
 // quelli di sempre. Tutto dentro una transazione: o va via tutto o niente.
 //
 //   utente    → wallet (e quindi tutto quello sotto)
+//   utente    → inviti; i condivisi di cui era membro tornano personali
 //   wallet    → categorie → transazioni
 //             → salvadanaio (vecchio) e cartelle del salvadanaio → loro movimenti
 //   categoria → transazioni, consigli
@@ -27,6 +28,7 @@ const TRANSAZIONE = 'api::transazioni.transazioni';
 const SALVADANAIO = 'api::salvadanaio.salvadanaio';
 const CONSIGLIO = 'api::consiglio.consiglio';
 const CARTELLA = 'api::cartella.cartella';
+const INVITO = 'api::invito.invito';
 const MOVIMENTO = 'api::movimento-salvadanaio.movimento-salvadanaio';
 const DISPOSITIVO = 'api::notifica-dispositivo.notifica-dispositivo';
 
@@ -60,6 +62,7 @@ async function eliminaFigliDiWallet(strapi, walletId) {
   await eliminaDove(strapi, SALVADANAIO, { wallet: { id: walletId } });
   await eliminaDove(strapi, MOVIMENTO, { salvadanaio: { wallet: { id: walletId } } });
   await eliminaDove(strapi, CARTELLA, { wallet: { id: walletId } });
+  await eliminaDove(strapi, INVITO, { wallet: { id: walletId } });
 }
 
 const FIGLI = { [WALLET]: eliminaFigliDiWallet, [CATEGORIA]: (strapi, id) => eliminaFigliDiCategorie(strapi, [id]) };
@@ -73,6 +76,12 @@ async function eliminaDatiDegliUtenti(strapi, where) {
   if (!utenti.length) return;
   const ids = utenti.map((u) => u.id);
   await eliminaDove(strapi, DISPOSITIVO, { utente: { id: { $in: ids } } });
+  // Inviti fatti o ricevuti, e i condivisi di cui era membro: quelli restano a
+  // chi li ha creati, tornano personali.
+  await eliminaDove(strapi, INVITO, { $or: [{ da: { id: { $in: ids } } }, { a: { id: { $in: ids } } }] });
+  for (const w of await strapi.db.query(WALLET).findMany({ select: ['id'], where: { membro: { id: { $in: ids } } } })) {
+    await strapi.db.query(WALLET).update({ where: { id: w.id }, data: { membro: null, condiviso: false } });
+  }
   const wallets = await strapi.db.query(WALLET).findMany({
     select: ['documentId'],
     where: { users_permissions_user: { id: { $in: ids } } },

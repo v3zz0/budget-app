@@ -11,6 +11,7 @@ const sellaFactory = require('../services/sella-parser');
 const csvParser = require('../services/csv-parser')();
 const autoCategoriaFactory = require('../services/auto-categoria');
 const { verificaUrlAi } = require('../services/url-ai');
+const { filtroWallet, walletDiUtente, ruolo } = require('../../../accesso');
 
 const pdfParser = pdfParserFactory();
 const diffEngine = diffFactory();
@@ -33,18 +34,6 @@ const daBanca = (b) => ({ data: b.data, importo: Number(b.importo), descrizione:
 // Senza questo controllo un utente autenticato potrebbe passare il walletId di
 // un altro e farsi restituire le sue categorie, transazioni e sforamenti.
 // Stesso schema usato in categorie/transazioni.
-async function walletDelloUtente(documentId, userId) {
-  const entry = await strapi.documents('api::wallet.wallet').findOne({
-    documentId,
-    populate: { users_permissions_user: true },
-  });
-  if (!entry || !entry.users_permissions_user) return null;
-  if (entry.users_permissions_user.id !== userId) return null;
-  return entry;
-}
-
-// Impostazioni AI dell'utente (scelte dall'app). Se non ha mai configurato
-// niente resta il comportamento storico: Ollama con le variabili d'ambiente.
 function configAi(user) {
   const motore = user?.aiMotore || 'ollama';
   return {
@@ -109,7 +98,8 @@ module.exports = {
 
       const userId = ctx.state.user && ctx.state.user.id;
       if (!userId) return ctx.unauthorized();
-      if (!(await walletDelloUtente(walletId, userId))) {
+      const walletScelto = await walletDiUtente(strapi, walletId, userId);
+      if (!walletScelto) {
         return ctx.notFound('Portafoglio non trovato');
       }
       if (!files || !files.pdf) {
@@ -148,7 +138,8 @@ module.exports = {
       // Gli sforamenti restano invece sul portafoglio scelto: un budget ha
       // senso solo dentro il suo portafoglio.
       const walletsUtente = await strapi.documents('api::wallet.wallet').findMany({
-        filters: { users_permissions_user: { id: userId } },
+        filters: filtroWallet(userId),
+        populate: { users_permissions_user: true, membro: true },
       });
       const categorie = await strapi.documents('api::categorie.categorie').findMany({
         filters: { wallet: { documentId: { $in: walletsUtente.map((w) => w.documentId) } } },
@@ -170,7 +161,7 @@ module.exports = {
           categorie: { documentId: { $in: idsCategorie } },
           Data: { $gte: primoGiorno, $lte: ultimoGiorno },
         },
-        populate: ['categorie'],
+        populate: { categorie: { populate: { wallet: { fields: ['documentId'] } } } },
         limit: -1,
       });
 
@@ -249,7 +240,19 @@ module.exports = {
       // I contanti non passano dal conto: fuori dal confronto, altrimenti
       // rubano l'abbinamento a un movimento vero. Restano negli sforamenti.
       // Versamenti in cassa e rimborsi del condiviso non sono né entrate né uscite.
-      const confrontabile = (t) => !t.Contanti && ['uscita', 'entrata'].includes(t.categorie?.Tipo || 'uscita');
+      // Portafoglio condiviso, "di chi è l'estratto conto?" (progetto.md §12):
+      // un estratto personale si confronta solo con i movimenti pagati o
+      // ricevuti da me; quello cointestato solo con la cassa comune. Così le
+      // spese pagate dall'altra persona non risultano "mancanti".
+      const estratto = ctx.request.body.estratto === 'cassa' ? 'cassa' : 'mio';
+      const mioRuolo = new Map(walletsUtente.map((w) => [w.documentId, ruolo(w, userId)]));
+      const condivisi = new Set(walletsUtente.filter((w) => w.condiviso).map((w) => w.documentId));
+      const delConto = (t) => {
+        const w = t.categorie?.wallet?.documentId;
+        if (estratto === 'cassa') return w === walletId && t.pagatoDa === 'cassa';
+        return !condivisi.has(w) || t.pagatoDa === mioRuolo.get(w);
+      };
+      const confrontabile = (t) => !t.Contanti && ['uscita', 'entrata'].includes(t.categorie?.Tipo || 'uscita') && delConto(t);
       const esito = diffEngine.confronta(transazioniConto, transazioniDB.filter(confrontabile));
       let mancanti = esito.mancanti.map((m) => ({ ...m, tipo: m.tipo || 'uscita' }));
       const sforamenti = diffEngine.calcolaSforamenti(transazioniDB, categorieWallet);

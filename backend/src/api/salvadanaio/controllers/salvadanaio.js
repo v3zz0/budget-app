@@ -11,6 +11,7 @@
  */
 
 const { createCoreController } = require('@strapi/strapi').factories;
+const { filtroWallet, POPULATE_ACCESSO, puoUsare } = require('../../../accesso');
 
 const UID = 'api::salvadanaio.salvadanaio';
 const WALLET_UID = 'api::wallet.wallet';
@@ -18,21 +19,17 @@ const WALLET_UID = 'api::wallet.wallet';
 async function salvadanaioDelloUtente(strapi, documentId, userId) {
   const entry = await strapi.documents(UID).findOne({
     documentId,
-    populate: { wallet: { populate: { users_permissions_user: true } } },
+    populate: { wallet: { populate: POPULATE_ACCESSO } },
   });
-  if (!entry || !entry.wallet || !entry.wallet.users_permissions_user) return null;
-  if (entry.wallet.users_permissions_user.id !== userId) return null;
-  return entry;
+  return entry && puoUsare(entry.wallet, userId) ? entry : null;
 }
 
 async function walletDelloUtente(strapi, documentId, userId) {
   const entry = await strapi.documents(WALLET_UID).findOne({
     documentId,
-    populate: { users_permissions_user: true },
+    populate: POPULATE_ACCESSO,
   });
-  if (!entry || !entry.users_permissions_user) return null;
-  if (entry.users_permissions_user.id !== userId) return null;
-  return entry;
+  return entry && puoUsare(entry, userId) ? entry : null;
 }
 
 module.exports = createCoreController(UID, ({ strapi }) => ({
@@ -47,7 +44,7 @@ module.exports = createCoreController(UID, ({ strapi }) => ({
     ctx.query.filters = {
       $and: [
         filtroClient,
-        { wallet: { users_permissions_user: { id: { $eq: userId } } } },
+        { wallet: filtroWallet(userId) },
       ],
     };
     return super.find(ctx);
