@@ -44,5 +44,5 @@ export const interrompiRicorrente = (id) =>
   api.put(`${URL}/${id}`, { data: { TransazioneRicorrente: false, RicorrenzaTemporale: null, InPausa: false } });
 
 export const trovaTransazione = async (id) =>
-  (await api.get(`${URL}/${id}`, { params: { populate: { categorie: { fields: ["Nome"] } } } }))
+  (await api.get(`${URL}/${id}`, { params: { populate: { categorie: { fields: ["Nome", "Tipo", "Nascosta", "icona"] } } } }))
     .data.data;
