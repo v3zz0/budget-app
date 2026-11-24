@@ -15,6 +15,7 @@ import Ciambella from "@/components/Ciambella.vue";
 import Avatar from "@/components/Avatar.vue";
 import { accettaInvito, elencaInviti, rifiutaInvito } from "@/services/condivisione.js";
 import { creaTransazione } from "@/services/transazioni.js";
+import { statoSalvadanaio } from "@/services/salvadanaio.js";
 import { altro, bilancio, miaQuota, saldoCassa, ultimoPareggio } from "@/utils/conti.js";
 import { isoLocale, parseImporto, testoImporto } from "@/utils/movimenti.js";
 
@@ -42,6 +43,21 @@ async function creaPrimo() {
     primo.salvando = false;
   }
 }
+
+// Salvadanaio del portafoglio scelto, per il blocco in fondo (progetto.md §15)
+const salvadanaio = ref(null);
+watch(
+  () => walletStore.walletId,
+  async (id) => {
+    salvadanaio.value = null;
+    if (id) salvadanaio.value = await statoSalvadanaio(id).catch(() => null);
+  },
+  { immediate: true },
+);
+const cartelle = computed(() => salvadanaio.value?.cartelle || []);
+const totaleSalvadanaio = computed(() => cartelle.value.reduce((s, c) => s + c.saldo, 0));
+// I tre salvadanai più ricchi
+const piuRicchi = computed(() => [...cartelle.value].sort((a, b) => b.saldo - a.saldo).slice(0, 3));
 
 // I consigli li genera il cron a fine mese: qui si leggono e basta.
 onMounted(() => consigli.carica());
@@ -216,21 +232,31 @@ const breve = (d) => `${Number(d.slice(8, 10))} ${nome.value.slice(0, 3).toLower
     </section>
 
     <template v-else>
+      <!-- Il titolo si prende lo spazio libero: se le icone stanno sulla sua riga
+           restano a destra, se vanno a capo partono da sinistra (progetto.md §19) -->
       <div class="mb-8 flex flex-wrap items-end justify-between gap-4 sm:mb-10">
-        <div>
+        <div class="flex-[1_1_auto]">
           <div class="eyebrow">Riepilogo del mese</div>
           <h1 class="display">{{ nome }} <span class="text-testo3">{{ dashboard.mese.anno }}</span></h1>
         </div>
-        <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
+        <div class="flex flex-wrap items-center justify-start gap-2">
           <div v-if="condiviso" class="seg mr-1" role="group" aria-label="Quali importi mostrare">
             <button :aria-pressed="!miaParte" @click="miaParte = false">Totale</button>
             <button :aria-pressed="miaParte" @click="miaParte = true">La mia parte</button>
           </div>
-          <router-link to="/consigli" class="circle-btn relative" aria-label="Consigli sul budget" title="Consigli sul budget">
+          <!-- condiviso su telefono: "Totale / La mia parte" su una riga, le quattro icone sotto -->
+          <span v-if="condiviso" class="hidden basis-full max-[640px]:block" aria-hidden="true" />
+          <router-link
+            to="/consigli"
+            class="circle-btn relative"
+            :aria-label="consigli.daGuardare ? `Consigli sul budget, ${consigli.daGuardare} da guardare` : 'Consigli sul budget'"
+            title="Consigli sul budget"
+          >
             <i class="ph-bold ph-bell" />
-            <span v-if="consigli.nonLetti" class="absolute -top-0.5 -right-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-arancio px-1 text-[11px] font-bold text-inchiostro">{{ consigli.nonLetti }}</span>
+            <span v-if="consigli.daGuardare" class="num absolute -top-[3px] -right-[3px] h-5 min-w-5 rounded-full bg-arancio px-[5px] text-center text-[11.5px] leading-5 font-semibold text-inchiostro ring-[3px] ring-fondo">{{ consigli.daGuardare }}</span>
           </router-link>
           <router-link to="/anno" class="circle-btn" aria-label="Riepilogo dell'anno" title="Riepilogo dell'anno"><i class="ph-bold ph-chart-bar" /></router-link>
+          <span class="mx-1 h-6 w-px self-center bg-bordo-forte" aria-hidden="true" />
           <button class="circle-btn" aria-label="Mese precedente" @click="dashboard.cambiaMese(-1)"><i class="ph-bold ph-caret-left" /></button>
           <button class="circle-btn" aria-label="Mese successivo" @click="dashboard.cambiaMese(1)"><i class="ph-bold ph-caret-right" /></button>
         </div>
@@ -408,7 +434,8 @@ const breve = (d) => `${Number(d.slice(8, 10))} ${nome.value.slice(0, 3).toLower
                 <b class="min-w-0 flex-1 truncate text-[15px] font-medium">{{ v.nome }}</b>
                 <span v-if="v.stato === 'sforato'" class="chip">sforato</span>
               </div>
-              <div class="flex items-baseline justify-between gap-2">
+              <!-- cifra e "rimasti di" affiancati sulla stessa linea di base (progetto.md §16) -->
+              <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <strong class="num text-[28px] leading-none font-normal">{{ eur(v.rimanente, { corto: true }) }}</strong>
                 <small class="text-[13px]" :class="v.stato === 'sforato' ? '' : 'text-testo2'">{{ v.rimanente < 0 ? "oltre" : "rimasti di" }} {{ eur(v.budget, { corto: true }) }}</small>
               </div>
@@ -419,6 +446,45 @@ const breve = (d) => `${Number(d.slice(8, 10))} ${nome.value.slice(0, 3).toLower
             </article>
           </div>
         </section>
+
+        <!-- Chiusura della Home: accesso al Salvadanaio (progetto.md §15) -->
+        <router-link
+          v-if="salvadanaio"
+          to="/risparmio"
+          class="blocco group reveal mt-10 grid grid-cols-[minmax(0,1fr)] gap-8 bg-crema transition hover:bg-crema-scuro active:scale-[.995] sm:mt-12 sm:p-8 min-[981px]:grid-cols-2 min-[981px]:gap-10"
+          aria-label="Apri il salvadanaio"
+        >
+          <div class="flex flex-col">
+            <div class="flex items-center gap-3 text-base font-semibold">
+              <span class="grid h-12 w-12 place-items-center rounded-full bg-inchiostro text-[22px] text-su-inchiostro"><i class="ph-bold ph-piggy-bank" /></span>Salvadanaio
+            </div>
+            <div class="mt-auto pt-6 text-[clamp(48px,6vw,76px)] leading-none tracking-[-0.055em] min-[981px]:pt-10"><Euro :v="totaleSalvadanaio" /></div>
+            <p class="mt-3 text-[14.5px] font-medium">messi da parte in {{ cartelle.length }} {{ cartelle.length === 1 ? "cartella" : "cartelle" }}</p>
+          </div>
+          <div class="flex flex-col gap-5">
+            <ul class="flex flex-col">
+              <li
+                v-for="(c, i) in piuRicchi"
+                :key="c.id"
+                class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3"
+                :class="{ 'border-t-[1.5px] border-inchiostro-velo': i }"
+              >
+                <span class="grid h-9 w-9 place-items-center rounded-full text-xl" :style="{ background: c.standard ? 'var(--color-inchiostro-velo)' : `var(--color-av-${c.colore})` }">
+                  <i v-if="c.standard" class="ph-bold ph-calendar-blank text-[17px]" /><Emoji v-else :e="c.emoji || '🐷'" />
+                </span>
+                <span class="min-w-0">
+                  <b class="block truncate text-[14.5px] font-semibold">{{ c.nome }}</b>
+                  <span v-if="c.obiettivo" class="bar mt-1.5 block h-[5px]! bg-inchiostro-velo!"><span class="bg-inchiostro!" :style="{ width: `${Math.min(100, (c.saldo / c.obiettivo) * 100)}%` }" /></span>
+                  <small v-else class="mt-1 block text-[12.5px] font-medium">{{ c.standard ? "un mese per riga" : "senza obiettivo" }}</small>
+                </span>
+                <span class="num text-base tracking-[-0.02em]">{{ eur(c.saldo, { corto: true }) }}</span>
+              </li>
+            </ul>
+            <span class="pill-btn pill-btn--ink mt-auto h-[52px]! self-stretch sm:self-end">
+              Apri il salvadanaio <i class="ph-bold ph-arrow-right transition-transform group-hover:translate-x-[3px]" />
+            </span>
+          </div>
+        </router-link>
       </template>
     </template>
     <Dialog v-model:visible="salda.aperto" modal :showHeader="false" :pt="{ root: { class: 'w-[min(440px,calc(100%-32px))] rounded-[28px]! border-0! bg-card!' }, content: { class: 'p-6! sm:p-8!' } }">

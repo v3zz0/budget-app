@@ -10,6 +10,8 @@ export const useConsigliStore = defineStore("consigli", {
   getters: {
     // pallini sulla campanella
     nonLetti: (s) => s.lista.filter((c) => c.stato === "nuovo").length,
+    // pallino della campanella: quelli ancora da accettare o ignorare (progetto.md §19)
+    daGuardare: (s) => s.lista.filter((c) => c.stato === "nuovo" || c.stato === "letto").length,
   },
 
   actions: {
