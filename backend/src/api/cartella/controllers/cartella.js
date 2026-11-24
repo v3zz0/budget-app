@@ -39,6 +39,9 @@ module.exports = {
   movimento: azione(async ({ ctx, body, wallet, utente }) => {
     await s.movimento(strapi, wallet, ctx.params.id, body, ruolo(wallet, utente.id));
   }),
+  automatico: azione(async ({ ctx, body, wallet, utente }) => {
+    await s.attivaAutomatico(strapi, wallet, ctx.params.id, body, ruolo(wallet, utente.id), utente.id);
+  }),
   eliminaMovimento: azione(async ({ ctx, wallet }) => {
     await s.eliminaMovimento(strapi, wallet, ctx.params.id);
   }),

@@ -29,7 +29,7 @@ const PERMESSI = [
   ...su('api::profilo.profilo', ['caricaFoto', 'rimuoviFoto']),
   ...su('api::feedback.feedback', ['invia']),
   ...su('api::invito.invito', ['elenco', 'invita', 'accetta', 'rifiuta', 'annulla', 'esci']),
-  ...su('api::cartella.cartella', ['stato', 'crea', 'modifica', 'elimina', 'movimento', 'eliminaMovimento', 'risparmio']),
+  ...su('api::cartella.cartella', ['stato', 'crea', 'modifica', 'elimina', 'movimento', 'automatico', 'eliminaMovimento', 'risparmio']),
   ...su('api::notifiche.notifiche', ['stato', 'salva', 'attiva', 'disattiva', 'prova']),
   // `user.find` sembra strano ma serve: i controller owner-aware filtrano per
   // `users_permissions_user` e Strapi 5 valida quel filtro contro i permessi del

@@ -14,6 +14,7 @@ module.exports = {
     r('PUT', '/salvadanai/:id', 'modifica'),
     r('DELETE', '/salvadanai/:id', 'elimina'),
     r('POST', '/salvadanai/:id/movimenti', 'movimento'),
+    r('POST', '/salvadanai/:id/automatico', 'automatico'),
     r('DELETE', '/salvadanai/movimenti/:id', 'eliminaMovimento'),
   ],
 };

@@ -25,6 +25,8 @@
 //      dal server, elimina solo il creatore, uscita solo a conti pari
 //  16. feedback: l'utente lo scrive il server, screenshot nella Media Library,
 //      dall'app non si legge né si modifica
+//  17. versamenti automatici nel salvadanaio: primo subito, poi il cron una
+//      volta al mese (anche da Risparmi mensili), fuori dalle transazioni
 //  13. salvadanaio a cartelle: migrazione, versa, sposta, saldi mai sotto
 //      zero (verificati dal server), cascata, accesso solo al proprio wallet
 //
@@ -91,7 +93,7 @@ async function main() {
   try {
     assert.strictEqual(app.db.config.connection.client, 'sqlite', 'ABORT: il database non è sqlite');
     await prova(app, porta);
-    console.log('OK: sicurezza multi-utente (feedback, condiviso, analisi, salvadanaio, entrate, foto profilo, ricorrenti in pausa, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
+    console.log('OK: sicurezza multi-utente (versamenti automatici, feedback, condiviso, analisi, salvadanaio, entrate, foto profilo, ricorrenti in pausa, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
   } finally {
     await app.destroy();
     fs.rmSync(appDir, { recursive: true, force: true });
@@ -422,7 +424,12 @@ async function prova(app, porta) {
     assert.strictEqual((await http('POST', `/api/salvadanai/${auto}/movimenti`, jAda, { wallet: ws, importo: 0 })).status, 400);
     const std = r.body.cartelle.find((c) => c.standard).id;
     assert.strictEqual((await http('DELETE', `/api/salvadanai/${std}?wallet=${ws}`, jAda)).status, 400, 'la standard non si elimina');
-    r = await http('POST', `/api/salvadanai/${auto}/movimenti`, jAda, { wallet: ws, importo: -1000 });
+    // Regressione: due movimenti UGUALI contano due volte (db.query con un
+    // filtro su relazione fa DISTINCT: senza `id` nel select diventavano uno).
+    await http('POST', `/api/salvadanai/${auto}/movimenti`, jAda, { wallet: ws, importo: -30 });
+    await http('POST', `/api/salvadanai/${auto}/movimenti`, jAda, { wallet: ws, importo: -30 });
+    assert.strictEqual((await http('POST', `/api/salvadanai/${auto}/movimenti`, jAda, { wallet: ws, importo: -941 })).status, 400, 'saldo 940: 941 non si preleva');
+    r = await http('POST', `/api/salvadanai/${auto}/movimenti`, jAda, { wallet: ws, importo: -940 });
     assert.strictEqual(r.status, 200, 'prelevare tutto si può');
     assert.strictEqual(r.body.cartelle.find((c) => c.id === auto).saldo, 0);
     // Un altro utente: niente, né con il suo wallet né col proprio
@@ -576,6 +583,49 @@ async function prova(app, porta) {
     // Dall'app non si legge né si modifica
     assert.ok([403, 404, 405].includes((await http('GET', '/api/feedbacks', jAda)).status));
     assert.ok([403, 404, 405].includes((await http('PUT', `/api/feedbacks/${fb.documentId}`, jAda, { data: { stato: 'risolto' } })).status));
+  }
+
+  // ── 17. Versamenti automatici nel salvadanaio ──────────────────────────────
+  {
+    const { materializzaRicorrenti } = require(path.join(radice, 'src/ricorrenti'));
+    const MOV = 'api::movimento-salvadanaio.movimento-salvadanaio';
+    const wv = (await http('POST', '/api/wallets', jAda, { data: { Nome: 'WV' } })).body.data.documentId;
+    let st = (await http('POST', '/api/salvadanai', jAda, { wallet: wv, nome: 'Giappone', emoji: '✈️', obiettivo: 3000 })).body;
+    const gp = st.cartelle.find((c) => c.nome === 'Giappone').id;
+    await http('PUT', '/api/salvadanai/risparmio', jAda, { wallet: wv, mese: '2026-09', importo: 300 });
+    // da soldi nuovi, data passata: il primo versamento va subito
+    r = await http('POST', `/api/salvadanai/${gp}/automatico`, jAda, { wallet: wv, importo: 100, fonte: 'nuovi', data: '2026-10-05' });
+    assert.strictEqual(r.status, 200, `automatico: ${JSON.stringify(r.body?.error)}`);
+    let g = r.body.cartelle.find((c) => c.id === gp);
+    assert.strictEqual(g.saldo, 100, 'primo versamento subito');
+    assert.deepStrictEqual(g.automatici.map((a) => [a.importo, a.giorno, a.fonte]), [[100, 5, 'nuovi']]);
+    // da Risparmi mensili: esce dall'ultimo mese chiuso che basta (settembre)
+    r = await http('POST', `/api/salvadanai/${gp}/automatico`, jAda, { wallet: wv, importo: 150, fonte: 'mensili', data: '2026-10-07' });
+    assert.strictEqual(r.status, 200, `mensili: ${JSON.stringify(r.body?.error)}`);
+    assert.strictEqual(r.body.mesi.find((m) => m.mese === '2026-09').disponibile, 150, 'settembre: 300 − 150');
+    assert.strictEqual((await http('POST', `/api/salvadanai/${gp}/automatico`, jAda, { wallet: wv, importo: 999, fonte: 'mensili', data: '2026-10-08' })).status, 400, 'nessun mese basta');
+    // il cron del 5 novembre versa una volta sola; quello del 7 prende ancora da settembre
+    await materializzaRicorrenti(app, new Date(2026, 10, 5, 6));
+    await materializzaRicorrenti(app, new Date(2026, 10, 5, 6));
+    await materializzaRicorrenti(app, new Date(2026, 10, 7, 6));
+    st = (await http('GET', `/api/salvadanai?wallet=${wv}`, jAda)).body;
+    g = st.cartelle.find((c) => c.id === gp);
+    assert.strictEqual(g.saldo, 100 + 150 + 100 + 150, 'un versamento per ricorrenza al mese');
+    assert.strictEqual(st.mesi.find((m) => m.mese === '2026-09').disponibile, 0);
+    // terzo mese: settembre è vuoto e ottobre/novembre non hanno risparmi → saltato, non sotto zero
+    await materializzaRicorrenti(app, new Date(2026, 11, 7, 6));
+    assert.strictEqual((await http('GET', `/api/salvadanai?wallet=${wv}`, jAda)).body.cartelle.find((c) => c.id === gp).saldo, 500, 'da mensili senza risparmi: niente (resta 500)');
+    // non sono transazioni: non compaiono tra quelle di Ada... ma solo come template di sistema
+    const tx = (await http('GET', `/api/transazionis?filters[categorie][wallet][documentId][$eq]=${wv}&populate[categorie][fields][0]=Tipo`, jAda)).body.data;
+    assert.ok(tx.every((t) => t.categorie.Tipo === 'salvadanaio' && t.TransazioneRicorrente), 'solo i due template, nessuna transazione per mese');
+    // un altro utente non attiva versamenti nel salvadanaio di Ada
+    assert.strictEqual((await http('POST', `/api/salvadanai/${gp}/automatico`, jBob, { wallet: wv, importo: 1 })).status, 404);
+    // eliminare il salvadanaio toglie anche i versamenti automatici
+    await http('DELETE', `/api/salvadanai/${gp}?wallet=${wv}`, jAda);
+    assert.strictEqual(await conta(T, { salvadanaio: { documentId: gp } }), 0);
+    assert.strictEqual(await conta(T, { categorie: { wallet: { documentId: wv } }, TransazioneRicorrente: true }), 0);
+    await D(W).delete({ documentId: wv });
+    assert.strictEqual(await conta(MOV, { salvadanaio: null }), 0);
   }
 
   // ── 6. Accesso chiuso: gli account li crea solo l'amministratore ───────────

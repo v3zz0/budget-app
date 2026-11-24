@@ -38,7 +38,8 @@
         "uscita",
         "entrata",
         "versamento",
-        "rimborso"
+        "rimborso",
+        "salvadanaio"
       ],
       "default": "uscita",
       "required": true

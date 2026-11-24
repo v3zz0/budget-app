@@ -69,6 +69,18 @@
       "type": "relation",
       "relation": "manyToOne",
       "target": "plugin::users-permissions.user"
+    },
+    "salvadanaio": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::cartella.cartella"
+    },
+    "fonte": {
+      "type": "enumeration",
+      "enum": [
+        "nuovi",
+        "mensili"
+      ]
     }
   }
 }

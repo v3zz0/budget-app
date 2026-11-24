@@ -45,6 +45,11 @@
         "creatore",
         "membro"
       ]
+    },
+    "ricorrenza": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::transazioni.transazioni"
     }
   }
 }

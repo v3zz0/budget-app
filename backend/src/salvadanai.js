@@ -22,6 +22,7 @@ const MOV = 'api::movimento-salvadanaio.movimento-salvadanaio';
 const VECCHIO = 'api::salvadanaio.salvadanaio';
 const WALLET = 'api::wallet.wallet';
 const TRANSAZIONE = 'api::transazioni.transazioni';
+const CATEGORIA = 'api::categorie.categorie';
 
 const pad = (n) => String(n).padStart(2, '0');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -57,7 +58,9 @@ async function entrateMenoUscite(strapi, walletId, mese) {
   const ultimo = new Date(a, m, 0).getDate();
   const righe = await strapi.db.query(TRANSAZIONE).findMany({
     where: { Data: { $gte: `${mese}-01`, $lte: `${mese}-${pad(ultimo)}` }, categorie: { wallet: { id: walletId } } },
-    select: ['Importo'],
+    // `id` nel select: con un filtro su una relazione db.query fa DISTINCT e
+    // due righe uguali (stesso importo) diventerebbero una sola nella somma
+    select: ['id', 'Importo'],
     populate: { categorie: { select: ['Tipo'] } },
   });
   let s = 0;
@@ -96,6 +99,22 @@ async function stato(strapi, wallet) {
     });
   }
 
+  // Versamenti automatici (§16): template ricorrenti legati a una cartella
+  const automatici = await strapi.db.query(TRANSAZIONE).findMany({
+    where: { TransazioneRicorrente: true, salvadanaio: { id: { $in: cartelle.map((c) => c.id) } } },
+    select: ['documentId', 'Importo', 'Data', 'RicorrenzaTemporale', 'InPausa', 'fonte', 'Descrizione'],
+    populate: { salvadanaio: { select: ['id'] } },
+  });
+  const autoPer = new Map();
+  for (const t of automatici) {
+    const id = t.salvadanaio?.id;
+    if (!autoPer.has(id)) autoPer.set(id, []);
+    autoPer.get(id).push({
+      id: t.documentId, importo: r2(t.Importo), giorno: Number(String(t.RicorrenzaTemporale || t.Data).slice(8, 10)),
+      inPausa: !!t.InPausa, fonte: t.fonte || 'nuovi', inizio: t.Data,
+    });
+  }
+
   const meseCorrente = meseDi();
   return {
     meseCorrente,
@@ -108,6 +127,7 @@ async function stato(strapi, wallet) {
         obiettivo: c.Obiettivo == null ? null : r2(c.Obiettivo), standard: !!c.Standard,
         saldo: r2(movs.reduce((s, m) => s + m.importo, 0)),
         movimenti: c.Standard ? [] : movs,
+        automatici: autoPer.get(c.id) || [],
       };
     }),
   };
@@ -119,9 +139,9 @@ const cartellaDelWallet = async (strapi, documentId, walletId) => {
   return c;
 };
 const saldoCartella = async (strapi, cartellaId) =>
-  r2((await strapi.db.query(MOV).findMany({ where: { salvadanaio: { id: cartellaId } }, select: ['Importo'] })).reduce((s, m) => s + Number(m.Importo), 0));
+  r2((await strapi.db.query(MOV).findMany({ where: { salvadanaio: { id: cartellaId } }, select: ['id', 'Importo'] })).reduce((s, m) => s + Number(m.Importo), 0));
 const disponibileMese = async (strapi, standardId, mese) =>
-  r2((await strapi.db.query(MOV).findMany({ where: { salvadanaio: { id: standardId }, Mese: mese }, select: ['Importo'] })).reduce((s, m) => s + Number(m.Importo), 0));
+  r2((await strapi.db.query(MOV).findMany({ where: { salvadanaio: { id: standardId }, Mese: mese }, select: ['id', 'Importo'] })).reduce((s, m) => s + Number(m.Importo), 0));
 
 function importoValido(v) {
   const n = r2(v);
@@ -168,6 +188,8 @@ async function eliminaCartella(strapi, wallet, documentId) {
     const collegati = movs.map((m) => m.Provenienza?.id).filter(Boolean);
     const ids = [...movs.map((m) => m.id), ...collegati];
     if (ids.length) await strapi.db.query(MOV).deleteMany({ where: { id: { $in: ids } } });
+    // i versamenti automatici verso questo salvadanaio non hanno più senso
+    await strapi.db.query(TRANSAZIONE).deleteMany({ where: { salvadanaio: { id: c.id } } });
     await strapi.db.query(CARTELLA).delete({ where: { id: c.id } });
   });
 }
@@ -177,7 +199,7 @@ async function eliminaCartella(strapi, wallet, documentId) {
  * daMese = "AAAA-MM": i soldi arrivano dai Risparmi mensili di quel mese
  * (due movimenti, stessa transazione); il totale del wallet non cambia.
  */
-async function movimento(strapi, wallet, documentId, { importo, nota, daMese, data, chi }, mioRuolo = null) {
+async function movimento(strapi, wallet, documentId, { importo, nota, daMese, data, chi, ricorrenza }, mioRuolo = null) {
   const c = await cartellaDelWallet(strapi, documentId, wallet.id);
   if (c.Standard) throw new Errore('Nei Risparmi mensili si imposta il risparmio del mese');
   const segno = Number(importo) < 0 ? -1 : 1;
@@ -204,7 +226,11 @@ async function movimento(strapi, wallet, documentId, { importo, nota, daMese, da
     // Condiviso: chi ha versato o prelevato (default: chi registra)
     const Chi = wallet.condiviso ? (['creatore', 'membro'].includes(chi) ? chi : mioRuolo || 'creatore') : null;
     const m = await strapi.db.query(MOV).create({
-      data: { Importo: segno * valore, Data: giorno, Nota: testo, Chi, salvadanaio: c.id, ...(provenienza && { Provenienza: provenienza.id }) },
+      data: {
+        Importo: segno * valore, Data: giorno, Nota: testo, Chi, salvadanaio: c.id,
+        ...(provenienza && { Provenienza: provenienza.id }),
+        ...(ricorrenza && { ricorrenza }), // versamento automatico (§16): anti-doppione del cron
+      },
     });
     return m.documentId;
   });
@@ -291,7 +317,86 @@ async function migraVecchio(strapi) {
   return creati;
 }
 
+// ── Versamenti automatici nel salvadanaio (progetto.md §16) ──────────────────
+
+/**
+ * Da quale mese dei Risparmi mensili prendere `importo`: l'ultimo mese CHIUSO
+ * che ne ha abbastanza. null se nessuno basta.
+ */
+async function meseDisponibile(strapi, standardId, importo, prima = meseDi()) {
+  const movs = await strapi.db.query(MOV).findMany({ where: { salvadanaio: { id: standardId }, Mese: { $lt: prima } }, select: ['id', 'Importo', 'Mese'] });
+  const disp = new Map();
+  for (const m of movs) disp.set(m.Mese, r2((disp.get(m.Mese) || 0) + Number(m.Importo)));
+  return [...disp].filter(([, v]) => v >= importo - 0.004).map(([k]) => k).sort().pop() || null;
+}
+
+/** La categoria di sistema dei versamenti nel salvadanaio (nascosta), creata se manca. */
+async function categoriaSalvadanaio(strapi, walletId) {
+  const q = strapi.db.query(CATEGORIA);
+  return (await q.findOne({ where: { wallet: { id: walletId }, Tipo: 'salvadanaio' } }))
+    || q.create({ data: { Nome: 'Salvadanaio', Tipo: 'salvadanaio', icona: '🐷', Nascosta: true, Budget_categoria: 0, wallet: walletId } });
+}
+
+/**
+ * Esegue un versamento automatico (dal cron o all'attivazione): un movimento
+ * nella cartella, legato al template. Con fonte "mensili" i soldi escono
+ * dall'ultimo mese chiuso che basta; se nessuno basta si salta (e si dice).
+ */
+async function versaDaRicorrenza(strapi, templateId, giorno) {
+  const t = await strapi.db.query(TRANSAZIONE).findOne({
+    where: { id: templateId },
+    populate: { salvadanaio: { populate: { wallet: true } }, categorie: true },
+  });
+  const cartella = t?.salvadanaio;
+  if (!cartella?.wallet) return false;
+  const wallet = cartella.wallet;
+  const importo = r2(t.Importo);
+  let daMese = null;
+  if (t.fonte === 'mensili') {
+    const standard = await assicuraStandard(strapi, wallet.id);
+    daMese = await meseDisponibile(strapi, standard.id, importo, giorno.slice(0, 7));
+    if (!daMese) {
+      strapi.log.warn(`Salvadanaio: versamento automatico di €${importo} in "${cartella.Nome}" saltato, nessun mese con abbastanza risparmi`);
+      return false;
+    }
+  }
+  await movimento(strapi, wallet, cartella.documentId, {
+    importo, daMese, data: giorno, nota: t.Descrizione || 'Versamento automatico', ricorrenza: t.id,
+    chi: t.pagatoDa === 'membro' ? 'membro' : 'creatore',
+  });
+  return true;
+}
+
+/**
+ * Attiva "ogni mese, in automatico" (Transazioni → Salvadanaio). Il giorno è
+ * quello di `data`; se la data è oggi o passata il primo versamento va subito.
+ */
+async function attivaAutomatico(strapi, wallet, documentId, { importo, fonte, data, nota, chi }, mioRuolo, utenteId) {
+  const c = await cartellaDelWallet(strapi, documentId, wallet.id);
+  if (c.Standard) throw new Errore('Nei Risparmi mensili il risparmio si chiude da solo a fine mese');
+  const valore = importoValido(importo);
+  const giorno = /^\d{4}-\d{2}-\d{2}$/.test(data || '') ? data : oggiIso();
+  const cat = await categoriaSalvadanaio(strapi, wallet.id);
+  const template = await strapi.db.query(TRANSAZIONE).create({
+    data: {
+      Importo: valore, Data: giorno, RicorrenzaTemporale: giorno, TransazioneRicorrente: true, InPausa: false,
+      Descrizione: String(nota || '').trim().slice(0, 120) || `Salvadanaio · ${c.Nome}`,
+      categorie: cat.id, salvadanaio: c.id, fonte: fonte === 'mensili' ? 'mensili' : 'nuovi', creatoDa: utenteId,
+      pagatoDa: wallet.condiviso ? (['creatore', 'membro'].includes(chi) ? chi : mioRuolo || 'creatore') : null,
+    },
+  });
+  if (giorno <= oggiIso()) {
+    const fatto = await versaDaRicorrenza(strapi, template.id, giorno);
+    if (!fatto) {
+      await strapi.db.query(TRANSAZIONE).delete({ where: { id: template.id } });
+      throw new Errore('Nessun mese chiuso ha abbastanza risparmi per questo versamento');
+    }
+  }
+  return template.documentId;
+}
+
 module.exports = {
+  attivaAutomatico, versaDaRicorrenza, meseDisponibile,
   Errore, assicuraStandard, stato, creaCartella, modificaCartella, eliminaCartella, movimento,
   eliminaMovimento, impostaRisparmio, chiudiMese, migraVecchio, entrateMenoUscite, meseDi,
 };

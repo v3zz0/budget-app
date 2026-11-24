@@ -54,7 +54,8 @@ async function sforamenti(strapi, utente, data) {
 
   const transazioni = await strapi.db.query(TRANSAZIONI).findMany({
     where: { Data: { $between: [inizio, fine] }, categorie: { id: { $in: categorie.map((c) => c.id) } } },
-    select: ['Importo'],
+    // `id`: senza, due spese uguali diventano una (DISTINCT) e il totale sbaglia
+    select: ['id', 'Importo'],
     populate: { categorie: { select: ['id'] } },
   });
   const centesimi = (valore) => Math.round(Number(valore) * 100);

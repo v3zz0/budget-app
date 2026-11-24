@@ -27,6 +27,10 @@ async function materializzaRicorrenti(strapi, oggi = new Date()) {
 
   for (const t of templates) {
     if (!t.categorie) continue;
+    // Versamento automatico nel salvadanaio (progetto.md §16): un movimento
+    // nella cartella invece di una transazione. Va prima del calcolo del giorno
+    // di chi fa le spese, ma con la stessa regola (sotto).
+    const salvadanaio = t.categorie.Tipo === 'salvadanaio';
     const rif = t.RicorrenzaTemporale || t.Data;
     if (!rif) continue;
 
@@ -46,6 +50,16 @@ async function materializzaRicorrenti(strapi, oggi = new Date()) {
     // ponytail: match per categoria+descrizione; due ricorrenti con la stessa
     //   descrizione nella stessa categoria verrebbero fuse. Per precisione:
     //   un campo che colleghi l'istanza al template.
+    if (salvadanaio) {
+      const giornoV = `${anno}-${mese}-${String(Math.min(giornoRic, lastDay)).padStart(2, "0")}`;
+      const tpl = await strapi.db.query("api::transazioni.transazioni").findOne({ where: { documentId: t.documentId }, select: ["id"] });
+      const gia = await strapi.db.query("api::movimento-salvadanaio.movimento-salvadanaio").count({
+        where: { ricorrenza: { id: tpl.id }, Data: { $gte: primo, $lte: ultimo } },
+      });
+      if (!gia) await require("./salvadanai").versaDaRicorrenza(strapi, tpl.id, giornoV);
+      continue;
+    }
+
     const esistenti = await strapi
       .documents("api::transazioni.transazioni")
       .findMany({

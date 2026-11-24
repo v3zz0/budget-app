@@ -23,7 +23,8 @@ function errore(ctx, status, message) {
 async function movimentiConto(walletId) {
   const righe = await strapi.db.query(TRANSAZIONE).findMany({
     where: { categorie: { wallet: { id: walletId } } },
-    select: ['Importo', 'pagatoDa', 'quota', 'quotaCassa'],
+    // `id`: senza, due movimenti uguali diventano uno (DISTINCT) e il conto sbaglia
+    select: ['id', 'Importo', 'pagatoDa', 'quota', 'quotaCassa'],
     populate: { categorie: { select: ['Tipo'] } },
   });
   return righe.map((t) => ({ tipo: t.categorie?.Tipo || 'uscita', importo: t.Importo, pagatoDa: t.pagatoDa, quota: t.quota, quotaCassa: t.quotaCassa }));
