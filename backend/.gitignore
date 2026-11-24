@@ -132,4 +132,4 @@ build
 .strapi-updater.json
 .strapi-cloud.json
 types/generated
-.nx/cache
+.nx/cachetmp/
