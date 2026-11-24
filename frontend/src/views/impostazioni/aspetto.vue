@@ -46,8 +46,8 @@ const scelte = computed(() => [
       </button>
     </div>
     <p class="mt-5 text-[12.5px] text-testo2">
-      Lo cambi anche al volo dal pulsante <i class="ph-bold ph-sun" /> / <i class="ph-bold ph-moon" /> in alto. La scelta resta
-      su questo dispositivo e sul tuo account.
+      Al computer lo cambi anche al volo dal cerchio <i class="ph-bold ph-sun" /> / <i class="ph-bold ph-moon" /> in basso a
+      destra; sul telefono si sceglie qui. La scelta resta su questo dispositivo e sul tuo account.
     </p>
   </section>
 </template>

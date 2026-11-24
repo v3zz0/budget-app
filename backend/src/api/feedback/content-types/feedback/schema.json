@@ -1,0 +1,21 @@
+{
+  "kind": "collectionType",
+  "collectionName": "feedbacks",
+  "info": {
+    "singularName": "feedback",
+    "pluralName": "feedbacks",
+    "displayName": "Feedback",
+    "description": "Segnalazioni e idee inviate dall'app (Invia feedback). Si leggono dall'admin."
+  },
+  "options": { "draftAndPublish": false },
+  "pluginOptions": {},
+  "attributes": {
+    "tipo": { "type": "enumeration", "enum": ["problema", "idea", "altro"], "required": true },
+    "messaggio": { "type": "text", "required": true, "maxLength": 1000 },
+    "screenshot": { "type": "media", "multiple": false, "allowedTypes": ["images"] },
+    "contesto": { "type": "string", "maxLength": 300 },
+    "rispondi": { "type": "boolean", "default": true },
+    "utente": { "type": "relation", "relation": "manyToOne", "target": "plugin::users-permissions.user" },
+    "stato": { "type": "enumeration", "enum": ["nuovo", "letto", "risolto"], "default": "nuovo" }
+  }
+}

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
 import { useAuthStore } from "@/stores/auth.js";
@@ -7,6 +7,7 @@ import { useWalletStore } from "@/stores/wallet.js";
 import { erroreLeggibile } from "@/services/api.js";
 import { temaChiaro } from "@/tema.js";
 import Avatar from "./Avatar.vue";
+import Feedback from "./Feedback.vue";
 
 const router = useRouter();
 const toast = useToast();
@@ -28,8 +29,13 @@ const attiva = (to) => {
   return p.startsWith(to);
 };
 
-const menuAperto = ref(false);
+// Un menu alla volta: "portafogli" o "account" (progetto.md §20)
+const aperto = ref(null);
+const menuAperto = computed({ get: () => aperto.value === "portafogli", set: (v) => (aperto.value = v ? "portafogli" : null) });
 const menu = ref(null);
+const menuAccount = ref(null);
+const btnAccount = ref(null);
+const feedback = ref(false);
 const io = computed(() => walletStore.io);
 const sel = computed(() => walletStore.selectedWallet);
 
@@ -42,9 +48,34 @@ function scegli(w) {
   menuAperto.value = false;
 }
 const chiudi = (e) => {
-  if (menu.value && !menu.value.contains(e.target)) menuAperto.value = false;
+  if (!menu.value?.contains(e.target) && !menuAccount.value?.contains(e.target)) aperto.value = null;
 };
-const esc = (e) => e.key === "Escape" && (menuAperto.value = false);
+const esc = (e) => {
+  if (e.key !== "Escape" || !aperto.value) return;
+  if (aperto.value === "account") btnAccount.value?.focus();
+  aperto.value = null;
+};
+
+// Menu dell'account da tastiera: frecce, Home e Fine tra le voci
+async function apriAccount() {
+  aperto.value = aperto.value === "account" ? null : "account";
+  if (aperto.value) {
+    await nextTick();
+    menuAccount.value?.querySelector("[role=menuitem]")?.focus();
+  }
+}
+function tastiAccount(e) {
+  const voci = [...menuAccount.value.querySelectorAll("[role=menuitem]")];
+  const i = voci.indexOf(document.activeElement);
+  const vai = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: voci.length - 1 }[e.key];
+  if (vai === undefined) return;
+  e.preventDefault();
+  voci[(vai + voci.length) % voci.length]?.focus();
+}
+function apriFeedback() {
+  aperto.value = null;
+  feedback.value = true;
+}
 
 onMounted(async () => {
   document.addEventListener("click", chiudi);
@@ -129,14 +160,6 @@ function esci() {
     </div>
 
     <div class="flex-1" />
-    <button
-      class="circle-btn"
-      :aria-label="temaChiaro ? 'Passa alla modalità notte' : 'Passa alla modalità giorno'"
-      :title="temaChiaro ? 'Passa alla modalità notte' : 'Passa alla modalità giorno'"
-      @click="cambiaTema"
-    >
-      <i class="ph-bold" :class="temaChiaro ? 'ph-moon' : 'ph-sun'" />
-    </button>
     <router-link
       to="/risparmio"
       class="circle-btn bg-crema! text-inchiostro! hover:bg-crema-scuro!"
@@ -146,17 +169,51 @@ function esci() {
     >
       <i class="ph-bold ph-piggy-bank" />
     </router-link>
-    <router-link
-      to="/impostazioni#profilo"
-      class="grid h-11 w-11 flex-none place-items-center rounded-full max-[380px]:h-[38px] max-[380px]:w-[38px] hover:ring-2 hover:ring-bordo-forte"
-      aria-label="Il tuo profilo"
-      title="Il tuo profilo"
-    >
-      <Avatar :p="io" :size="40" class="max-[380px]:h-[38px]! max-[380px]:w-[38px]!" />
-    </router-link>
-    <button class="circle-btn" aria-label="Esci" title="Esci" @click="esci">
-      <i class="ph-bold ph-sign-out" />
-    </button>
+    <!-- Menu dell'account: dalla foto profilo (Esci sta qui dentro) -->
+    <div ref="menuAccount" class="relative flex-none" @keydown="aperto === 'account' && tastiAccount($event)">
+      <button
+        ref="btnAccount"
+        class="grid h-11 w-11 place-items-center rounded-full transition-shadow max-[380px]:h-[38px] max-[380px]:w-[38px] hover:ring-2 hover:ring-bordo-forte"
+        :class="{ 'ring-2 ring-anello ring-offset-2 ring-offset-fondo': aperto === 'account' }"
+        aria-haspopup="menu"
+        :aria-expanded="aperto === 'account'"
+        aria-label="Il tuo account"
+        title="Il tuo account"
+        @click.stop="apriAccount"
+      >
+        <Avatar :p="io" :size="40" class="max-[380px]:h-[38px]! max-[380px]:w-[38px]!" />
+      </button>
+      <div
+        v-if="aperto === 'account'"
+        class="absolute top-[calc(100%+8px)] right-0 z-30 w-[min(270px,calc(100vw-32px))] rounded-[20px] bg-fondo-profondo p-1.5 shadow-pop"
+        role="menu"
+        aria-label="Il tuo account"
+      >
+        <div class="mb-1 flex items-center gap-3 border-b border-bordo px-3 pt-2.5 pb-3">
+          <Avatar :p="io" :size="40" />
+          <span class="min-w-0">
+            <b class="block truncate text-[14.5px] font-medium">{{ io?.nome }}</b>
+            <small class="block truncate text-[12.5px] text-testo2">{{ auth.userInfo.email }}</small>
+          </span>
+        </div>
+        <router-link
+          v-for="v in [{ to: '/impostazioni#profilo', l: 'Modifica profilo', i: 'ph-user' }, { to: '/impostazioni', l: 'Impostazioni', i: 'ph-gear-six' }]"
+          :key="v.l"
+          :to="v.to"
+          role="menuitem"
+          class="flex items-center gap-3 rounded-[14px] px-3 py-2.5 hover:bg-campo focus-visible:bg-campo"
+          @click="aperto = null"
+        >
+          <span class="grid h-9 w-9 place-items-center rounded-full bg-campo text-[17px]"><i class="ph-bold" :class="v.i" /></span><b class="font-medium">{{ v.l }}</b>
+        </router-link>
+        <button role="menuitem" class="flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-left hover:bg-campo focus-visible:bg-campo" @click="apriFeedback">
+          <span class="grid h-9 w-9 place-items-center rounded-full bg-campo text-[17px]"><i class="ph-bold ph-chat-circle-text" /></span><b class="font-medium">Invia feedback</b>
+        </button>
+        <button role="menuitem" class="mt-1 flex w-full items-center gap-3 rounded-b-[14px] border-t border-bordo px-3 py-2.5 text-left text-fg-avviso hover:bg-campo focus-visible:bg-campo" @click="esci">
+          <span class="grid h-9 w-9 place-items-center rounded-full bg-campo text-[17px]"><i class="ph-bold ph-sign-out" /></span><b class="font-medium">Esci</b>
+        </button>
+      </div>
+    </div>
   </header>
 
   <!-- Pillola di navigazione flottante: resta scura anche di giorno -->
@@ -164,18 +221,30 @@ function esci() {
     class="fixed bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full bg-dock-fondo p-[5px] shadow-[0_12px_32px_rgba(0,0,0,.35)] sm:bottom-6 sm:gap-1.5 sm:p-1.5"
     aria-label="Navigazione principale"
   >
-    <router-link
-      v-for="v in voci"
-      :key="v.to"
-      :to="v.to"
-      :aria-label="v.label"
-      :aria-current="attiva(v.to) ? 'page' : undefined"
-      class="dock-voce"
-    >
-      <i class="ph-bold" :class="v.icon" />
-      <span v-if="attiva(v.to)">{{ v.label }}</span>
-    </router-link>
+    <template v-for="(v, i) in voci" :key="v.to">
+      <!-- Su telefono, al centro: "+" per segnare subito un'uscita (progetto.md §17) -->
+      <router-link v-if="i === 2" to="/transazioni?tipo=uscita&rapida=1" class="dock-piu" aria-label="Registra un movimento">
+        <i class="ph-bold ph-plus" />
+      </router-link>
+      <router-link :to="v.to" :aria-label="v.label" :aria-current="attiva(v.to) ? 'page' : undefined" class="dock-voce">
+        <i class="ph-bold" :class="v.icon" />
+        <span v-if="attiva(v.to)">{{ v.label }}</span>
+      </router-link>
+    </template>
   </nav>
+
+  <!-- Giorno / notte: cerchio fisso in basso a destra, scuro come la pillola.
+       Su telefono non c'è: il tema si cambia da Impostazioni → Aspetto -->
+  <button
+    class="tema-fab"
+    :aria-label="temaChiaro ? 'Passa alla modalità notte' : 'Passa alla modalità giorno'"
+    :title="temaChiaro ? 'Passa alla modalità notte' : 'Passa alla modalità giorno'"
+    @click="cambiaTema"
+  >
+    <i class="ph-bold" :class="temaChiaro ? 'ph-moon' : 'ph-sun'" />
+  </button>
+
+  <Feedback v-model="feedback" />
 </template>
 
 <style scoped>
@@ -195,12 +264,34 @@ function esci() {
 .dock-voce:hover { color: var(--color-dock-testo-on); }
 .dock-voce[aria-current="page"] { background: var(--color-dock-attiva); color: var(--color-inchiostro); padding: 0 20px 0 17px; }
 .dock-voce span { font-size: 14.5px; font-weight: 500; }
+.dock-piu { display: none; }
 @media (max-width: 640px) {
   .dock-voce { height: 48px; min-width: 48px; }
+  /* Cinque posti: la pagina attiva resta crema, senza scritta */
+  .dock-voce[aria-current="page"] { padding: 0 15px; }
+  .dock-voce span { display: none; }
+  .dock-piu {
+    display: grid; place-items: center; width: 60px; height: 60px; margin: -10px 2px; border-radius: 999px;
+    background: var(--color-arancio); color: var(--color-inchiostro); font-size: 24px;
+    box-shadow: 0 0 0 5px var(--color-dock-fondo); transition: transform 0.15s;
+  }
+  .dock-piu:active { transform: scale(0.94); }
 }
 @media (max-width: 360px) {
   .dock-voce { height: 44px; min-width: 44px; padding: 0 12px; font-size: 18px; }
-  .dock-voce[aria-current="page"] { padding: 0 14px 0 12px; }
-  .dock-voce span { font-size: 13.5px; }
+  .dock-voce[aria-current="page"] { padding: 0 12px; }
+  .dock-piu { width: 54px; height: 54px; margin: -8px 0; font-size: 22px; }
 }
+.tema-fab {
+  position: fixed; right: 24px; bottom: 24px; z-index: 20; width: 52px; height: 52px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 21px;
+  background: var(--color-dock-fondo); color: var(--color-dock-testo-on);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transition: transform 0.2s, background 0.2s;
+}
+.tema-fab:hover { background: var(--color-dock-voce); }
+.tema-fab:active { transform: scale(0.94); }
+.tema-fab i { transition: transform 0.45s; }
+.tema-fab:hover i { transform: rotate(-20deg); }
+@media (max-width: 640px) { .tema-fab { display: none; } }
 </style>

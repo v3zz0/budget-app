@@ -23,6 +23,8 @@
 //  15. portafoglio condiviso: inviti, il membro vede SOLO il condiviso (mai i
 //      portafogli personali di chi l'ha creato), campi del condiviso decisi
 //      dal server, elimina solo il creatore, uscita solo a conti pari
+//  16. feedback: l'utente lo scrive il server, screenshot nella Media Library,
+//      dall'app non si legge né si modifica
 //  13. salvadanaio a cartelle: migrazione, versa, sposta, saldi mai sotto
 //      zero (verificati dal server), cascata, accesso solo al proprio wallet
 //
@@ -89,7 +91,7 @@ async function main() {
   try {
     assert.strictEqual(app.db.config.connection.client, 'sqlite', 'ABORT: il database non è sqlite');
     await prova(app, porta);
-    console.log('OK: sicurezza multi-utente (condiviso, analisi, salvadanaio, entrate, foto profilo, ricorrenti in pausa, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
+    console.log('OK: sicurezza multi-utente (feedback, condiviso, analisi, salvadanaio, entrate, foto profilo, ricorrenti in pausa, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
   } finally {
     await app.destroy();
     fs.rmSync(appDir, { recursive: true, force: true });
@@ -550,6 +552,30 @@ async function prova(app, porta) {
     await D(W).delete({ documentId: wc.documentId });
     assert.strictEqual(await conta(I, { wallet: null }), 0, 'gli inviti spariscono col wallet');
     await D(USER).delete({ documentId: carla2.documentId });
+  }
+
+  // ── 16. Invia feedback ─────────────────────────────────────────────────────
+  {
+    const FB = 'api::feedback.feedback';
+    const sharp = require(path.join(radice, 'node_modules/sharp'));
+    const png = await sharp({ create: { width: 40, height: 30, channels: 3, background: '#f5a574' } }).png().toBuffer();
+    const invia = (jwt, campi, conFoto = false) => {
+      const f = new FormData();
+      for (const [k, v] of Object.entries(campi)) f.append(k, v);
+      if (conFoto) f.append('screenshot', new Blob([png], { type: 'image/png' }), 'schermo.png');
+      return http('POST', '/api/feedback', jwt, f);
+    };
+    assert.strictEqual((await invia(jAda, { tipo: 'problema', messaggio: 'corto' })).status, 400, 'almeno 10 caratteri');
+    assert.strictEqual((await invia(jAda, { tipo: 'boh', messaggio: 'Messaggio abbastanza lungo' })).status, 400);
+    assert.ok([401, 403].includes((await invia(null, { tipo: 'idea', messaggio: 'Messaggio abbastanza lungo' })).status));
+    r = await invia(jAda, { tipo: 'problema', messaggio: 'Salvo un\'uscita e non compare', contesto: 'Transazioni · 375x812', rispondi: 'true', utente: String(bob.id) }, true);
+    assert.strictEqual(r.status, 201, `feedback: ${JSON.stringify(r.body?.error)}`);
+    const fb = await q(FB).findOne({ where: {}, orderBy: { id: 'desc' }, populate: { utente: true, screenshot: true } });
+    assert.deepStrictEqual([fb.utente.id, fb.tipo, fb.stato, fb.contesto], [ada.id, 'problema', 'nuovo', 'Transazioni · 375x812'], 'l\'utente lo decide il server');
+    assert.ok(fb.screenshot?.url, 'screenshot nella Media Library');
+    // Dall'app non si legge né si modifica
+    assert.ok([403, 404, 405].includes((await http('GET', '/api/feedbacks', jAda)).status));
+    assert.ok([403, 404, 405].includes((await http('PUT', `/api/feedbacks/${fb.documentId}`, jAda, { data: { stato: 'risolto' } })).status));
   }
 
   // ── 6. Accesso chiuso: gli account li crea solo l'amministratore ───────────

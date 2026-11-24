@@ -227,7 +227,11 @@ function apriMovimento(m) {
   router.push(`/transazioni/${m.documentId}`);
 }
 const esc = (e) => e.key === "Escape" && props.id && chiudiModifica();
-onMounted(() => document.addEventListener("keydown", esc));
+onMounted(() => {
+  document.addEventListener("keydown", esc);
+  // "+" della pillola (?rapida=1): cursore subito nell'importo, si apre la tastiera
+  if (route.query.rapida === "1" && !props.id) document.getElementById("imp")?.focus();
+});
 onBeforeUnmount(() => document.removeEventListener("keydown", esc));
 
 /** La categoria da usare: quella scelta, oppure quella di "+ Altro" (trovata o creata). */
