@@ -15,7 +15,7 @@ import { categoriaOmonima, nomeCategoria } from "@/utils/impostazioni.js";
 import { appiattisci, isoLocale, parseImporto, perGiorno, testoImporto, totali } from "@/utils/movimenti.js";
 import Interruttore from "@/components/Interruttore.vue";
 import MeseNav from "@/components/MeseNav.vue";
-import { EMOJI } from "@/components/SceltaEmoji.vue";
+import SceltaEmoji from "@/components/SceltaEmoji.vue";
 import Avatar from "@/components/Avatar.vue";
 import { altro, bilancio, effetto, miaQuota, saldoCassa } from "@/utils/conti.js";
 
@@ -454,20 +454,8 @@ watch(
                 </button>
                 <input id="altro-nome" v-model="altra.nome" maxlength="30" placeholder="Es. Farmacia" autocomplete="off" class="h-[52px] min-w-0 flex-1 rounded-full bg-inchiostro-velo px-5 text-inchiostro outline-none placeholder:text-inchiostro/55 focus:shadow-[inset_0_0_0_2px_var(--color-inchiostro)]" />
               </div>
-              <div v-if="altra.emojiAperte" class="grid grid-cols-8 gap-1.5" role="radiogroup" aria-label="Emoji della categoria">
-                <button
-                  v-for="e in EMOJI"
-                  :key="e"
-                  type="button"
-                  role="radio"
-                  :aria-checked="altra.icona === e"
-                  class="grid aspect-square place-items-center rounded-xl text-[22px] hover:bg-inchiostro-velo"
-                  :class="{ 'shadow-[inset_0_0_0_2px_var(--color-inchiostro)]': altra.icona === e }"
-                  @click="(altra.icona = e), (altra.emojiAperte = false)"
-                >
-                  <Emoji :e="e" />
-                </button>
-              </div>
+              <!-- chiusa da sola quando si sceglie: si torna al nome -->
+              <SceltaEmoji v-if="altra.emojiAperte" v-model="altra.icona" su-blocco @update:modelValue="altra.emojiAperte = false" />
               <p v-if="errori.altro" class="flex items-center gap-1.5 text-[13px] font-semibold"><i class="ph-bold ph-warning-circle" />{{ errori.altro }}</p>
               <label class="flex cursor-pointer items-center justify-between gap-4 border-t border-inchiostro-velo pt-3">
                 <span>

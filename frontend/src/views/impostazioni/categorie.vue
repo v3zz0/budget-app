@@ -11,7 +11,7 @@ import { erroreLeggibile } from "@/services/api.js";
 import { eur } from "@/utils/formato.js";
 import { nomeMese } from "@/utils/budget.js";
 import { categoriaOmonima, nomeCategoria } from "@/utils/impostazioni.js";
-import SceltaEmoji, { EMOJI, EMOJI_ENTRATE } from "@/components/SceltaEmoji.vue";
+import SceltaEmoji from "@/components/SceltaEmoji.vue";
 
 const confirm = useConfirm();
 const toast = useToast();
@@ -184,7 +184,7 @@ async function elimina(c) {
               <InputNumber v-model="bozza.budget" inputId="c-bud-n" mode="currency" currency="EUR" locale="it-IT" :min="0" fluid />
             </div>
           </div>
-          <div class="mt-4"><SceltaEmoji v-model="bozza.icona" :emoji="entrata ? EMOJI_ENTRATE : EMOJI" /></div>
+          <div class="mt-4"><SceltaEmoji v-model="bozza.icona" /></div>
           <p v-if="bozza.errore" class="errore-campo flex items-center gap-1.5"><i class="ph-bold ph-warning-circle" />{{ bozza.errore }}</p>
           <div class="mt-5 flex justify-end gap-2">
             <button class="pill-btn pill-btn--ghost h-11! px-5!" @click="aperta = null">Annulla</button>
@@ -234,7 +234,7 @@ async function elimina(c) {
                 <InputNumber v-model="bozza.budget" :inputId="`c-bud-${i}`" mode="currency" currency="EUR" locale="it-IT" :min="0" fluid />
               </div>
             </div>
-            <div class="mt-4"><SceltaEmoji v-model="bozza.icona" :emoji="entrata ? EMOJI_ENTRATE : EMOJI" /></div>
+            <div class="mt-4"><SceltaEmoji v-model="bozza.icona" /></div>
             <p v-if="bozza.errore" class="errore-campo flex items-center gap-1.5"><i class="ph-bold ph-warning-circle" />{{ bozza.errore }}</p>
             <div class="mt-5 flex flex-col-reverse items-stretch justify-between gap-2 sm:flex-row sm:items-center">
               <button type="button" class="inline-flex h-10 items-center gap-1.5 self-start rounded-full px-3 text-sm font-medium text-fg-avviso hover:bg-card" @click="elimina(c)">
