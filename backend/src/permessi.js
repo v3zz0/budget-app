@@ -23,7 +23,7 @@ const PERMESSI = [
   // Niente delete: lo storico non si cancella dal client (la cascata lo toglie
   // lato server quando sparisce il portafoglio, vedi cascata.js).
   ...su('api::salvadanaio.salvadanaio', ['find', 'findOne', 'create', 'update']),
-  ...su('api::consiglio.consiglio', ['find', 'findOne', 'applica', 'segna']),
+  ...su('api::consiglio.consiglio', ['find', 'findOne', 'applica', 'segna', 'annulla']),
   ...su('api::analisi.analisi', ['analizza', 'testAi']),
   ...su('api::scontrino.scontrino', ['leggi']),
   ...su('api::profilo.profilo', ['caricaFoto', 'rimuoviFoto']),

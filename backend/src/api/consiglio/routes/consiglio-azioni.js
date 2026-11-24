@@ -11,6 +11,12 @@ module.exports = {
     },
     {
       method: 'POST',
+      path: '/consiglios/:id/annulla',
+      handler: 'consiglio.annulla',
+      config: { policies: [] },
+    },
+    {
+      method: 'POST',
       path: '/consiglios/:id/segna',
       handler: 'consiglio.segna',
       config: { policies: [] },

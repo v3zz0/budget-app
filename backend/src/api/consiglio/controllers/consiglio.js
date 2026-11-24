@@ -55,6 +55,24 @@ module.exports = createCoreController(UID, ({ strapi }) => ({
     return { ok: true, budget: consiglio.budgetProposto };
   },
 
+  // Annulla (progetto.md §19): un consiglio applicato rimette il budget di
+  // prima; uno ignorato torna da guardare. In tutti e due i casi torna "letto".
+  async annulla(ctx) {
+    const userId = ctx.state.user && ctx.state.user.id;
+    if (!userId) return ctx.unauthorized();
+    const consiglio = await consiglioDelloUtente(ctx.params.id, userId);
+    if (!consiglio) return ctx.notFound();
+    if (!['applicato', 'ignorato'].includes(consiglio.stato)) return ctx.badRequest('Niente da annullare');
+    if (consiglio.stato === 'applicato') {
+      await strapi.documents(CAT_UID).update({
+        documentId: consiglio.categorie.documentId,
+        data: { Budget_categoria: consiglio.budgetAttuale },
+      });
+    }
+    await strapi.documents(UID).update({ documentId: consiglio.documentId, data: { stato: 'letto' } });
+    return { ok: true, budget: consiglio.budgetAttuale };
+  },
+
   // "letto" spegne il pallino, "ignorato" toglie il consiglio dalla lista e
   // impedisce che venga rigenerato identico il mese dopo.
   async segna(ctx) {

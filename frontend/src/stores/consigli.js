@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { applicaConsiglio, elencaConsigli, segnaConsiglio } from "@/services/consigli.js";
+import { annullaConsiglio, applicaConsiglio, elencaConsigli, segnaConsiglio } from "@/services/consigli.js";
 import { erroreLeggibile } from "@/services/api.js";
 
 let ultima = 0; // solo l'ultima richiesta scrive; il logout la invalida
@@ -40,6 +40,11 @@ export const useConsigliStore = defineStore("consigli", {
     async applica(c) {
       await applicaConsiglio(c.documentId);
       this.lista = this.lista.filter((x) => x.documentId !== c.documentId);
+    },
+
+    async annulla(c) {
+      await annullaConsiglio(c.documentId);
+      await this.carica();
     },
 
     async ignora(c) {

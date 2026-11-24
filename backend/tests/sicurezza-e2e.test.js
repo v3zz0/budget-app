@@ -93,7 +93,7 @@ async function main() {
   try {
     assert.strictEqual(app.db.config.connection.client, 'sqlite', 'ABORT: il database non è sqlite');
     await prova(app, porta);
-    console.log('OK: sicurezza multi-utente (versamenti automatici, feedback, condiviso, analisi, salvadanaio, entrate, foto profilo, ricorrenti in pausa, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
+    console.log('OK: sicurezza multi-utente (consigli, versamenti automatici, feedback, condiviso, analisi, salvadanaio, entrate, foto profilo, ricorrenti in pausa, permessi, utenti, cascata, utenti eliminati, pulizia orfani, accesso chiuso, chiavi cifrate, SSRF)');
   } finally {
     await app.destroy();
     fs.rmSync(appDir, { recursive: true, force: true });
@@ -626,6 +626,21 @@ async function prova(app, porta) {
     assert.strictEqual(await conta(T, { categorie: { wallet: { documentId: wv } }, TransazioneRicorrente: true }), 0);
     await D(W).delete({ documentId: wv });
     assert.strictEqual(await conta(MOV, { salvadanaio: null }), 0);
+  }
+
+  // ── 18. Consigli: applica e annulla ────────────────────────────────────────
+  {
+    const wk = (await http('POST', '/api/wallets', jAda, { data: { Nome: 'WK' } })).body.data.documentId;
+    const ck = await D(C).create({ data: { Nome: 'Spesa', Budget_categoria: 400, wallet: wk } });
+    const k = await D(K).create({ data: { tipo: 'alza', budgetAttuale: 400, budgetProposto: 440, testo: 'x', stato: 'nuovo', categorie: ck.documentId } });
+    assert.strictEqual((await http('POST', `/api/consiglios/${k.documentId}/annulla`, jAda)).status, 400, 'niente da annullare');
+    assert.strictEqual((await http('POST', `/api/consiglios/${k.documentId}/applica`, jAda)).status, 200);
+    assert.strictEqual(Number((await q(C).findOne({ where: { id: ck.id } })).Budget_categoria), 440);
+    assert.strictEqual((await http('POST', `/api/consiglios/${k.documentId}/annulla`, jBob)).status, 404, 'bob non annulla i consigli di ada');
+    assert.strictEqual((await http('POST', `/api/consiglios/${k.documentId}/annulla`, jAda)).status, 200);
+    assert.strictEqual(Number((await q(C).findOne({ where: { id: ck.id } })).Budget_categoria), 400, 'budget di prima');
+    assert.strictEqual((await q(K).findOne({ where: { id: k.id } })).stato, 'letto');
+    await D(W).delete({ documentId: wk });
   }
 
   // ── 6. Accesso chiuso: gli account li crea solo l'amministratore ───────────
