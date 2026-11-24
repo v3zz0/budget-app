@@ -66,6 +66,18 @@ Stato del porting Flutter → Vue (fasi):
    `budgetApp/demoThomas/` (`progetto.md` fa fede). Provato nel browser su
    SQLite con due utenti; **non** ancora su dati di produzione.
 
+7. ✅ demoV2 (2026-11-24, `budgetApp/demoThomas/demoV2/`): menu account
+   sull'avatar (profilo, impostazioni, feedback, esci), "+" nel dock su
+   telefono, cerchio tema in basso a destra; **feedback** (`POST /api/feedback`,
+   collection `feedback`, screenshot nella Media Library di Strapi, si leggono
+   dall'admin); scelta emoji con 44 emoji, recenti e "+" libera; Home con
+   campanella e salvadanaio; **versamenti automatici** nel salvadanaio
+   (tipo "Salvadanaio" nel form: template ricorrente con categoria di sistema
+   `Tipo = salvadanaio`, il cron crea il movimento, anti-doppione su
+   `movimento.ricorrenza`; `POST /api/salvadanai/:id/automatico`); Consigli con
+   grafica nuova e **Annulla** (`POST /api/consiglios/:id/annulla` rimette il
+   budget di prima); Anno rifatto (stima = budget × mesi **con movimenti**).
+
 ## Struttura repository
 
 **Monorepo** (dal 2026-11-20, come `pulse-app`): il repository `budget-app`
@@ -298,6 +310,11 @@ sovrascrivono i core controller per legare ogni record al suo proprietario:
   anche `pagatoDa`/quote del condiviso. Anti-doppione per categoria+descrizione
   (non importo: cambiarlo a mese iniziato vale dal mese dopo)
 
+**`strapi.db.query` con un filtro su relazione fa `SELECT DISTINCT`:** se nel
+`select` non c'è `id`, due righe con lo stesso importo diventano una sola e la
+somma è sbagliata (era successo sui saldi del salvadanaio). Sommando, mettere
+sempre `'id'` nel `select` (c'è il test di regressione nell'e2e).
+
 Un filtro `campo: { $ne: valore }` in SQL scarta anche le righe NULL: sui
 campi aggiunti dopo (Tipo, InPausa, Nascosta) usare `$or` col `$null` oppure
 normalizzare in bootstrap.
@@ -443,6 +460,9 @@ non ha effetto e non dà errori (era successo: lo ha scoperto il test e2e).
   report è parziale.
 - **Campi importo nuovi:** valore iniziale `null` e non `0`, così si digita
   subito invece di dover selezionare `0,00 €`.
+- **Ambiente di prova pronto:** `node backend/scripts/avvia-prova.js` avvia
+  Strapi su SQLite (porta 1338, utenti `thomas` e `francesca`, password
+  `Prova1234!`), poi `VITE_PROXY_API=http://127.0.0.1:1338 npx vite`.
 - **Provare le schermate davvero:** `npm run build` e i test non bastano (due
   bug di questo tipo sono emersi solo nel browser). Si può avviare il `backend`
   su SQLite con una cartella app temporanea *senza* `database/migrations`
