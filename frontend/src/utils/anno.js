@@ -26,7 +26,10 @@ const somma = (serie) => serie.reduce((s, v) => s + v, 0);
  * categoria non ha storico, esiste solo il valore di oggi.
  */
 export function calcolaAnno({ anno, righe, categorie, adesso }) {
-  const mesi = mesiDaContare(anno, adesso);
+  // Stima del budget annuo = budget attuale × mesi CON MOVIMENTI (progetto.md
+  // §19): chi ha cominciato a usare l'app a giugno non si vede confrontare
+  // con dodici mesi di budget. Mai oltre i mesi già trascorsi.
+  let mesi = 0;
   const perCategoria = new Map();
   const nomi = new Map();
   const totaliMese = Array(12).fill(0);
@@ -48,6 +51,9 @@ export function calcolaAnno({ anno, righe, categorie, adesso }) {
     totaliMese[m] += r.importo;
     if (r.categoria) nomi.set(r.categoriaId, r.categoria);
   }
+
+  const conMovimenti = totaliMese.map((u, i) => u > 0 || entrateMese[i] > 0).filter(Boolean).length;
+  mesi = Math.min(conMovimenti, mesiDaContare(anno, adesso));
 
   const voce = (documentId, nome, icona, budgetMensile, serie) => {
     const speso = somma(serie);
@@ -84,4 +90,51 @@ export function calcolaAnno({ anno, righe, categorie, adesso }) {
     mesiConsiderati: mesi,
     vuoto: speso === 0,
   };
+}
+
+/**
+ * I mesi dell'anno per il grafico e la tabella (progetto.md §19).
+ * aperto = mese in corso (solo contorno), futuro = deve ancora arrivare.
+ * mie[] facoltativo: la mia parte delle uscite per mese (condiviso).
+ */
+export function mesiAnno(r, anno, adesso = new Date(), mie = null) {
+  const corrente = adesso.getFullYear() * 12 + adesso.getMonth();
+  return Array.from({ length: 12 }, (_, i) => {
+    const entrate = r.entratePerMese?.[i] || 0;
+    const uscite = r.perMese?.[i] || 0;
+    const quale = anno * 12 + i;
+    return {
+      i, entrate, uscite, saldo: Math.round((entrate - uscite) * 100) / 100,
+      mia: mie ? Math.round((mie[i] || 0) * 100) / 100 : null,
+      dati: entrate > 0 || uscite > 0, aperto: quale === corrente, futuro: quale > corrente,
+    };
+  });
+}
+
+/** Tre fatti sui mesi chiusi (se non ce ne sono, su quelli con dati). */
+export function fatti(mesi) {
+  const conDati = mesi.filter((m) => m.dati);
+  if (!conDati.length) return null;
+  const chiusi = conDati.filter((m) => !m.aperto);
+  const base = chiusi.length ? chiusi : conDati;
+  const max = (f) => base.reduce((a, b) => (f(b) > f(a) ? b : a));
+  return {
+    migliore: max((m) => m.saldo),
+    caro: max((m) => m.uscite),
+    leggero: base.reduce((a, b) => (b.uscite < a.uscite ? b : a)),
+    media: Math.round((base.reduce((s, m) => s + m.uscite, 0) / base.length) * 100) / 100,
+    primo: conDati[0],
+    ultimo: conDati[conDati.length - 1],
+    quanti: conDati.length,
+  };
+}
+
+/** La mia parte delle uscite per mese (condiviso). quota(r) = la mia quota 0..1 della riga. */
+export function miePerMese(righe, anno, quota) {
+  const out = Array(12).fill(0);
+  for (const r of righe) {
+    if (r.tipo !== "uscita" || Number(r.data.slice(0, 4)) !== anno) continue;
+    out[Number(r.data.slice(5, 7)) - 1] += r.importo * quota(r);
+  }
+  return out;
 }

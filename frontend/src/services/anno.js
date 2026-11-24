@@ -14,6 +14,7 @@ export async function caricaAnno(walletId, anno) {
   ]);
   return {
     riepilogo: calcolaAnno({ anno, righe: esito.righe, categorie }),
+    righe: esito.righe,
     mancanti: Math.max(esito.totale - esito.righe.length, 0),
   };
 }

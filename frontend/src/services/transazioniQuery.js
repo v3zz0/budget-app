@@ -17,6 +17,7 @@ const riga = (j) => ({
   portafoglio: j.categorie?.wallet?.Nome ?? "",
   ricorrente: !!j.TransazioneRicorrente,
   contanti: !!j.Contanti,
+  quota: j.quota ?? null, // condiviso: parte di chi ha creato il portafoglio
 });
 
 /**

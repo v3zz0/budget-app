@@ -24,9 +24,10 @@ test("aggrega per mese e categoria, ordina per speso", () => {
   assert.equal(out.perMese[2], 70);
   assert.deepEqual(out.categorie.map((c) => c.documentId), ["b", "a", "c"]);
   const a = out.categorie.find((c) => c.documentId === "a");
-  assert.equal(a.budgetStimato, 800); // 100 x 8 mesi
+  assert.equal(a.budgetStimato, 200); // 100 x 2 mesi con movimenti (gennaio e marzo)
   assert.equal(a.oltreStima, false);
-  assert.equal(out.budgetStimato, 800 + 400 + 240);
+  assert.equal(out.mesiConsiderati, 2);
+  assert.equal(out.budgetStimato, 200 + 100 + 60);
 });
 
 test("la categoria con budget e zero spese resta nell'elenco", () => {
@@ -53,7 +54,7 @@ test("righe di un altro anno non entrano nel totale", () => {
 
 test("oltre la stima", () => {
   const out = calcolaAnno({ anno: 2025, adesso: agosto2026, categorie: [cat("a", "Cibo", 10)], righe: [r("2025-05-05", 121, "a")] });
-  assert.equal(out.categorie[0].budgetStimato, 120);
+  assert.equal(out.categorie[0].budgetStimato, 10, "un mese con movimenti");
   assert.equal(out.categorie[0].oltreStima, true);
 });
 
@@ -74,4 +75,20 @@ test("le entrate non entrano nello speso", () => {
   assert.equal(r.entrate, 1800);
   assert.equal(r.entratePerMese[2], 1800);
   assert.equal(r.categorie.length, 1);
+});
+
+test("mesi dell'anno e tre fatti", async () => {
+  const { mesiAnno, fatti, miePerMese } = await import("./anno.js");
+  const r = { perMese: [0, 0, 0, 0, 0, 0, 0, 0, 1200, 1000, 900, 0], entratePerMese: [0, 0, 0, 0, 0, 0, 0, 0, 1800, 1800, 1800, 0] };
+  const m = mesiAnno(r, 2026, new Date(2026, 10, 24));
+  assert.equal(m[10].aperto, true);
+  assert.equal(m[11].futuro, true);
+  assert.equal(m[8].saldo, 600);
+  const f = fatti(m);
+  assert.equal(f.migliore.i, 9, "ottobre: +800 (novembre è in corso e non conta)");
+  assert.equal(f.caro.i, 8);
+  assert.equal(f.media, 1100);
+  assert.equal(f.quanti, 3);
+  const mie = miePerMese([{ tipo: "uscita", data: "2026-09-02", importo: 100 }, { tipo: "entrata", data: "2026-09-02", importo: 50 }], 2026, () => 0.5);
+  assert.equal(mie[8], 50);
 });
