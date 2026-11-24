@@ -27,6 +27,10 @@ test("appiattisci ordina dal più recente e porta il tipo", () => {
   assert.equal(m[1].tipo, "entrata");
 });
 
+test("i versamenti automatici nel salvadanaio non sono movimenti", () => {
+  assert.equal(appiattisci([...cat, { documentId: "s", Tipo: "salvadanaio", transazionis: [{ id: 9, Data: "2026-11-23", Importo: 100 }] }]).length, 4);
+});
+
 test("totali: versamenti né entrate né uscite", () => {
   assert.deepEqual(totali(appiattisci(cat)), { entrate: 1800, uscite: 42.4, saldo: 1757.6 });
 });

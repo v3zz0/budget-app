@@ -4,8 +4,9 @@ import { useRoute } from "vue-router";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { useWalletStore } from "@/stores/wallet.js";
-import { aggiornaRicorrente, elencaRicorrenti, interrompiRicorrente } from "@/services/transazioni.js";
+import { aggiornaRicorrente, elencaRicorrenti, eliminaTransazione, interrompiRicorrente } from "@/services/transazioni.js";
 import { erroreLeggibile } from "@/services/api.js";
+import { statoSalvadanaio } from "@/services/salvadanaio.js";
 import { eur } from "@/utils/formato.js";
 import { nomeMese } from "@/utils/budget.js";
 import { dataRicorrenza } from "@/utils/impostazioni.js";
@@ -30,8 +31,11 @@ async function carica(walletId = walletStore.walletId) {
   if (!walletId) return (lista.value = []);
   loading.value = true;
   try {
-    const dati = await elencaRicorrenti(walletId);
-    if (n === ultima) lista.value = dati;
+    // La cartella dei versamenti automatici arriva dallo stato del salvadanaio:
+    // le cartelle non hanno lettura REST, passano solo da /api/salvadanai.
+    const [dati, stato] = await Promise.all([elencaRicorrenti(walletId), statoSalvadanaio(walletId).catch(() => null)]);
+    const cartellaDi = new Map((stato?.cartelle || []).flatMap((c) => c.automatici.map((a) => [a.id, { Nome: c.nome, Emoji: c.emoji }])));
+    if (n === ultima) lista.value = dati.map((t) => ({ ...t, salvadanaio: cartellaDi.get(t.documentId) || null }));
   } catch (e) {
     if (n === ultima) errore.value = erroreLeggibile(e);
   } finally {
@@ -50,11 +54,17 @@ watch([() => route.query.scadenza, lista], ([id]) => {
 // Ordinate per giorno del mese
 const voci = computed(() =>
   lista.value
-    .map((t) => ({ t, giorno: giornoRicorrenza(t), prossima: prossimaScadenza(t), entrata: t.categorie?.Tipo === "entrata" }))
+    .map((t) => ({
+      t, giorno: giornoRicorrenza(t), prossima: prossimaScadenza(t), entrata: t.categorie?.Tipo === "entrata",
+      // versamento automatico nel salvadanaio (§16): importo neutro, né entrata né uscita
+      salv: t.categorie?.Tipo === "salvadanaio",
+    }))
     .sort((a, b) => a.giorno - b.giorno),
 );
 const totale = (entrata) =>
-  voci.value.filter((v) => v.entrata === entrata && !v.t.InPausa).reduce((s, v) => s + (Number(v.t.Importo) || 0), 0);
+  voci.value.filter((v) => !v.salv && v.entrata === entrata && !v.t.InPausa).reduce((s, v) => s + (Number(v.t.Importo) || 0), 0);
+const nelSalvadanaio = computed(() => voci.value.filter((v) => v.salv && !v.t.InPausa).reduce((s, v) => s + (Number(v.t.Importo) || 0), 0));
+const nome = (v) => (v.salv ? `Salvadanaio · ${v.t.salvadanaio?.Nome || "eliminato"}` : v.t.Descrizione || v.t.categorie?.Nome);
 const corto = (d) => `${d.getDate()} ${nomeMese(d.getMonth() + 1).slice(0, 3).toLowerCase()}`;
 
 function apri(t) {
@@ -91,14 +101,18 @@ async function pausa(t) {
 }
 
 function interrompi(t) {
+  const salv = t.categorie?.Tipo === "salvadanaio";
   confirm.require({
-    header: `Interrompere “${t.Descrizione || t.categorie?.Nome}”?`,
-    message: "Non verrà più registrata ogni mese. Le transazioni già registrate restano.",
+    header: `Interrompere “${salv ? `Salvadanaio · ${t.salvadanaio?.Nome || ""}` : t.Descrizione || t.categorie?.Nome}”?`,
+    message: salv
+      ? "Non verserà più ogni mese. I soldi già versati restano nel salvadanaio."
+      : "Non verrà più registrata ogni mese. Le transazioni già registrate restano.",
     acceptLabel: "Interrompi",
     icon: "ph-stop-circle",
     accept: async () => {
       try {
-        await interrompiRicorrente(t.documentId);
+        // il versamento automatico è solo un promemoria del server: si toglie
+        await (salv ? eliminaTransazione(t.documentId) : interrompiRicorrente(t.documentId));
         aperta.value = null;
         await carica();
       } catch (e) {
@@ -134,7 +148,7 @@ function interrompi(t) {
 
     <div v-else class="flex flex-col">
       <div
-        v-for="({ t, giorno, prossima, entrata }, i) in voci"
+        v-for="({ t, giorno, prossima, entrata, salv }, i) in voci"
         :key="t.documentId"
         class="rounded-[20px]"
         :class="[aperta === t.documentId ? 'bg-campo' : i ? 'border-t border-bordo' : '']"
@@ -147,19 +161,19 @@ function interrompi(t) {
           @click="apri(t)"
         >
           <span class="grid h-11 w-11 flex-none place-items-center rounded-full text-[22px]" :class="[aperta === t.documentId ? 'bg-card' : 'bg-campo', { 'opacity-50': t.InPausa }]">
-            <Emoji :e="t.categorie?.icona || '🔁'" />
+            <Emoji :e="salv ? t.salvadanaio?.Emoji || '🐷' : t.categorie?.icona || '🔁'" />
           </span>
           <span class="min-w-0 flex-1">
             <b class="block truncate text-[15px] font-medium" :class="{ 'text-testo3': t.InPausa }">
-              {{ t.Descrizione || t.categorie?.Nome }}
+              {{ nome({ t, salv }) }}
               <span v-if="t.InPausa" class="ml-2 rounded-full bg-campo px-2 py-0.5 align-[1px] text-xs font-normal text-testo2">in pausa</span>
             </b>
             <small class="block truncate text-[13px] text-testo2">
-              {{ t.categorie?.Nome }} · ogni {{ giorno }} del mese<template v-if="prossima"> · prossima il {{ corto(prossima) }}</template>
+              {{ salv ? (t.fonte === "mensili" ? "dai Risparmi mensili" : "soldi nuovi") : t.categorie?.Nome }} · ogni {{ giorno }} del mese<template v-if="prossima"> · prossima il {{ corto(prossima) }}</template>
             </small>
           </span>
-          <span class="num text-base" :class="t.InPausa ? 'text-testo3' : entrata ? 'text-fg-positivo' : 'text-fg-negativo'">
-            {{ eur(entrata ? Number(t.Importo) : -Number(t.Importo), { segno: true }) }}
+          <span class="num text-base" :class="t.InPausa ? 'text-testo3' : salv ? 'text-testo' : entrata ? 'text-fg-positivo' : 'text-fg-negativo'">
+            {{ salv ? eur(Number(t.Importo)) : eur(entrata ? Number(t.Importo) : -Number(t.Importo), { segno: true }) }}
           </span>
           <i class="ph-bold ph-caret-down text-testo3 transition-transform" :class="{ 'rotate-180': aperta === t.documentId }" />
         </button>
@@ -197,6 +211,7 @@ function interrompi(t) {
     <div v-if="voci.length" class="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-bordo pt-5 text-sm text-testo2">
       <span>Entrano in automatico <b class="num font-medium text-fg-positivo">{{ eur(totale(true), { segno: true }) }}</b> al mese</span>
       <span>Escono <b class="num font-medium text-fg-negativo">{{ eur(-totale(false)) }}</b> al mese</span>
+      <span v-if="nelSalvadanaio" class="basis-full">Vanno nel salvadanaio <b class="num font-medium text-testo">{{ eur(nelSalvadanaio) }}</b> al mese</span>
     </div>
   </section>
 </template>

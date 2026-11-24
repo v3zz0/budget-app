@@ -24,6 +24,8 @@ export const testoImporto = (n) => (n == null ? "" : String(Number(n).toFixed(2)
 export function appiattisci(categorie) {
   const out = [];
   for (const c of categorie) {
+    // i versamenti automatici nel salvadanaio non sono entrate né uscite: soldi spostati (§16)
+    if (c.Tipo === "salvadanaio") continue;
     for (const t of c.transazionis || []) {
       out.push({ ...t, importo: Number(t.Importo) || 0, tipo: c.Tipo || "uscita", cat: c });
     }

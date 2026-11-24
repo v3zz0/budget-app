@@ -5,6 +5,9 @@ import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { useWalletStore } from "@/stores/wallet.js";
 import { caricaConto, caricaMese } from "@/services/dashboard.js";
+import { attivaVersamentoAutomatico, muoviSalvadanaio, statoSalvadanaio } from "@/services/salvadanaio.js";
+import { meseDaCuiPrendere, piano } from "@/utils/piano.js";
+import { nomeMese } from "@/utils/budget.js";
 import { aggiornaTransazione, creaTransazione, eliminaTransazione, trovaTransazione } from "@/services/transazioni.js";
 import { creaCategoria } from "@/services/impostazioni.js";
 import { erroreLeggibile } from "@/services/api.js";
@@ -100,14 +103,15 @@ const gruppi = computed(() => perGiorno(visibili.value, oggi));
 
 // ── Form ─────────────────────────────────────────────────────────────────────
 const vuoto = () => ({
-  tipo: ["entrata", "versamento"].includes(route.query.tipo) ? route.query.tipo : "uscita",
+  tipo: ["entrata", "versamento", "salvadanaio"].includes(route.query.tipo) ? route.query.tipo : "uscita",
   pagatoDa: null, // condiviso: ruolo di chi paga (null = io)
   miaQuota: null, // condiviso: la mia parte 0..1 (null = regola del portafoglio)
   importo: "",
   categoriaId: null,
   descrizione: "",
   data: OGGI,
-  ricorrente: route.query.ricorrente === "1",
+  // nel salvadanaio parte già come versamento mensile (progetto.md §16)
+  ricorrente: route.query.ricorrente === "1" || route.query.tipo === "salvadanaio",
   contanti: false,
 });
 const form = reactive(vuoto());
@@ -122,6 +126,54 @@ const inputFoto = ref(null);
 const foglio = ref(null);
 
 const entrata = computed(() => form.tipo === "entrata");
+const inSalvadanaio = computed(() => form.tipo === "salvadanaio");
+
+// ── Versamento nel salvadanaio (progetto.md §16) ────────────────────────────
+const salv = ref(null); // stato del salvadanaio del portafoglio
+const salvForm = reactive({ cartella: route.query.verso || null, fonte: "nuovi", errore: "", erroreCartella: false });
+watch(
+  () => walletStore.walletId,
+  async (id) => (salv.value = id ? await statoSalvadanaio(id).catch(() => null) : null),
+  { immediate: true },
+);
+const salvadanai = computed(() => salv.value?.cartelle.filter((c) => !c.standard) || []);
+const cartellaScelta = computed(() => salvadanai.value.find((c) => c.id === salvForm.cartella));
+const giaAutomatici = computed(() => salvadanai.value.flatMap((c) => c.automatici.map((a) => ({ ...a, cartella: c }))));
+const meseFonte = computed(() => (salv.value ? meseDaCuiPrendere(salv.value.mesi, salv.value.meseCorrente, parseImporto(form.importo) || 0.01) : null));
+const nomeDelMese = (k) => `${nomeMese(Number(k.slice(5, 7))).toLowerCase()} ${k.slice(0, 4)}`;
+const disponibileDi = (k) => salv.value?.mesi.find((m) => m.mese === k)?.disponibile ?? 0;
+const pianoSalv = computed(() => {
+  const importo = parseImporto(form.importo);
+  const c = cartellaScelta.value;
+  if (!inSalvadanaio.value || !(importo > 0) || !c) return null;
+  return { ...piano({ importo, saldo: c.saldo, obiettivo: c.obiettivo, ricorrente: form.ricorrente, data: form.data, oggi: OGGI }), importo, c };
+});
+
+async function salvaSalvadanaio(importo) {
+  salvForm.erroreCartella = !cartellaScelta.value;
+  salvForm.errore = "";
+  if (salvForm.erroreCartella) return;
+  const subito = !form.ricorrente || form.data <= OGGI;
+  // una volta sola, da Risparmi mensili: l'ultimo mese chiuso che basta
+  const daMese = !form.ricorrente && salvForm.fonte === "mensili" ? meseDaCuiPrendere(salv.value.mesi, salv.value.meseCorrente, importo) : null;
+  if (!form.ricorrente && salvForm.fonte === "mensili" && !daMese) {
+    salvForm.errore = "Nei Risparmi mensili nessun mese chiuso ha abbastanza soldi";
+    return;
+  }
+  const chi = condiviso.value ? chiPaga.value : null;
+  const c = cartellaScelta.value;
+  salv.value = form.ricorrente
+    ? await attivaVersamentoAutomatico(walletStore.walletId, c.id, { importo, fonte: salvForm.fonte, data: form.data, nota: form.descrizione.trim(), chi })
+    : await muoviSalvadanaio(walletStore.walletId, c.id, { importo, nota: form.descrizione.trim(), daMese, chi, data: form.data });
+  avviso(
+    "success",
+    form.ricorrente
+      ? `${eur(importo)} ogni mese in ${c.nome}${subito ? " · primo versato oggi" : ` · dal ${Number(form.data.slice(8, 10))} ${nomeMese(Number(form.data.slice(5, 7))).toLowerCase()}`}`
+      : `${eur(importo)} in ${c.nome}${daMese ? ` · da ${nomeDelMese(daMese)}` : ""}`,
+  );
+  // il form resta su Salvadanaio, pronto per un altro
+  Object.assign(form, { importo: "", descrizione: "", data: OGGI, ricorrente: true });
+}
 const speciale = computed(() => form.tipo === "versamento" || form.tipo === "rimborso");
 // Condiviso: chi paga e la mia parte, con i valori predefiniti
 const chiPaga = computed(() => form.pagatoDa || io.value);
@@ -151,14 +203,25 @@ function scegliDivisione(d) {
 }
 // Le categorie del tipo scelto, senza le nascoste e quelle di sistema
 const pillole = computed(() => categorie.value.filter((c) => !c.Nascosta && (c.Tipo || "uscita") === form.tipo));
-const titolo = computed(() => `${originale.value ? "Modifica" : "Nuovo"} ${form.tipo === "rimborso" ? "rimborso" : form.tipo === "versamento" ? "versamento" : entrata.value ? "entrata" : "uscita"}`.replace("Nuovo entrata", "Nuova entrata").replace("Nuovo uscita", "Nuova uscita"));
+const titolo = computed(() => inSalvadanaio.value ? "Versa nel salvadanaio" : `${originale.value ? "Modifica" : "Nuovo"} ${form.tipo === "rimborso" ? "rimborso" : form.tipo === "versamento" ? "versamento" : entrata.value ? "entrata" : "uscita"}`.replace("Nuovo entrata", "Nuova entrata").replace("Nuovo uscita", "Nuova uscita"));
 // Versamenti e rimborsi vanno sulle categorie di sistema del condiviso
+const tipi = computed(() => [
+  { id: "uscita", l: "Uscita", i: "ph-arrow-up-right" },
+  { id: "entrata", l: "Entrata", i: "ph-arrow-down-left" },
+  ...(condiviso.value ? [{ id: "versamento", l: "Versamento", i: "ph-vault" }] : []),
+  // il salvadanaio non si apre in modifica da qui: i suoi movimenti stanno nella pagina Salvadanaio
+  ...(originale.value ? [] : [{ id: "salvadanaio", l: "Salvadanaio", i: "ph-piggy-bank" }]),
+]);
 const categoriaSistema = (tipo) => categorie.value.find((c) => c.Tipo === tipo)?.documentId;
 
 function scegliTipo(t) {
   if (form.tipo === t) return;
+  const prima = form.tipo;
   form.tipo = t;
   form.categoriaId = null; // la categoria si azzera cambiando tipo
+  if (t === "salvadanaio") form.ricorrente = true; // parte già come mensile
+  else if (prima === "salvadanaio") form.ricorrente = false;
+  if (t === "salvadanaio" && form.pagatoDa === "cassa") form.pagatoDa = null;
   if (t === "versamento" && form.pagatoDa === "cassa") form.pagatoDa = null;
   altra.attivo = false;
   errori.categoria = false;
@@ -263,6 +326,18 @@ async function categoriaDaUsare() {
 async function salva() {
   const importo = parseImporto(form.importo);
   errori.importo = !(importo > 0);
+  if (inSalvadanaio.value) {
+    if (errori.importo) return;
+    salvando.value = true;
+    try {
+      await salvaSalvadanaio(importo);
+    } catch (e) {
+      salvForm.errore = erroreLeggibile(e);
+    } finally {
+      salvando.value = false;
+    }
+    return;
+  }
   errori.categoria = !speciale.value && !altra.attivo && !form.categoriaId;
   errori.altro = "";
   if (errori.importo || errori.categoria) return;
@@ -340,8 +415,12 @@ async function scansiona(e) {
 }
 
 watch(
+  () => route.query.verso,
+  (v) => v && (salvForm.cartella = v),
+);
+watch(
   () => route.query.tipo,
-  (t) => !props.id && (t === "entrata" || t === "uscita") && scegliTipo(t),
+  (t) => !props.id && ["entrata", "uscita", "versamento", "salvadanaio"].includes(t) && scegliTipo(t),
 );
 </script>
 
@@ -357,7 +436,7 @@ watch(
       <section
         ref="foglio"
         class="reveal scroll-mt-4 rounded-[20px] px-5 py-6 text-inchiostro transition-colors duration-300 sm:rounded-[28px] sm:p-8"
-        :class="speciale ? 'bg-pietra' : entrata ? 'bg-salvia' : 'bg-arancio'"
+        :class="inSalvadanaio ? 'bg-crema' : speciale ? 'bg-pietra' : entrata ? 'bg-salvia' : 'bg-arancio'"
         aria-labelledby="titolo-foglio"
       >
         <div v-if="originale" class="mb-5 flex items-center justify-between gap-3">
@@ -377,18 +456,25 @@ watch(
           </button>
         </div>
 
-        <div v-if="form.tipo !== 'rimborso'" class="mb-6 grid auto-cols-fr grid-flow-col rounded-full bg-inchiostro-velo p-1 sm:mb-8" role="radiogroup" aria-label="Tipo di movimento">
+        <!-- Quattro tipi (condiviso): due righe da due. Su telefono solo testo. -->
+        <div
+          v-if="form.tipo !== 'rimborso'"
+          class="mb-6 grid gap-1 bg-inchiostro-velo p-1 sm:mb-8"
+          :class="tipi.length > 3 ? 'grid-cols-2 rounded-[26px]' : 'auto-cols-fr grid-flow-col rounded-full'"
+          role="radiogroup"
+          aria-label="Tipo di movimento"
+        >
           <button
-            v-for="t in [{ id: 'uscita', l: 'Uscita', i: 'ph-arrow-up-right' }, { id: 'entrata', l: 'Entrata', i: 'ph-arrow-down-left' }, ...(condiviso ? [{ id: 'versamento', l: 'Versamento', i: 'ph-vault' }] : [])]"
+            v-for="t in tipi"
             :key="t.id"
             type="button"
             role="radio"
             :aria-checked="form.tipo === t.id"
-            class="flex h-11 items-center justify-center gap-2 rounded-full text-[15px] font-semibold transition-colors"
+            class="flex h-11 min-w-0 items-center justify-center gap-2 rounded-full px-1 text-[15px] font-semibold whitespace-nowrap transition-colors max-[360px]:text-[13px]"
             :class="{ 'bg-inchiostro text-su-inchiostro': form.tipo === t.id }"
             @click="scegliTipo(t.id)"
           >
-            <i class="ph-bold" :class="t.i" />{{ t.l }}
+            <i class="ph-bold max-[640px]:hidden" :class="t.i" />{{ t.l }}
           </button>
         </div>
 
@@ -412,7 +498,66 @@ watch(
             <p v-if="errori.importo" class="mt-2 flex items-center gap-1.5 text-[13px] font-semibold"><i class="ph-bold ph-warning-circle" />Inserisci un importo maggiore di zero</p>
           </div>
 
-          <div v-if="!speciale">
+          <!-- Versamento nel salvadanaio -->
+          <template v-if="inSalvadanaio">
+            <div>
+              <span id="pig-l" class="mb-2.5 block text-sm font-semibold">In quale salvadanaio</span>
+              <div v-if="salvadanai.length" class="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="pig-l">
+                <button
+                  v-for="c in salvadanai"
+                  :key="c.id"
+                  type="button"
+                  role="radio"
+                  :aria-checked="salvForm.cartella === c.id"
+                  class="inline-flex h-[42px] max-w-full items-center gap-2 rounded-full pr-4 pl-2.5 text-[14.5px] font-medium shadow-[inset_0_0_0_1.5px_var(--color-inchiostro-linea)] hover:shadow-[inset_0_0_0_1.5px_var(--color-inchiostro)]"
+                  :class="{ 'bg-inchiostro text-su-inchiostro shadow-none!': salvForm.cartella === c.id }"
+                  @click="(salvForm.cartella = c.id), (salvForm.erroreCartella = false)"
+                >
+                  <Emoji :e="c.emoji || '🐷'" class="h-[22px]! w-[22px]!" /><span class="truncate">{{ c.nome }}</span>
+                </button>
+              </div>
+              <p v-else class="flex items-start gap-1.5 text-[13px]">
+                <i class="ph-bold ph-info mt-0.5" /><span>Non hai ancora salvadanai. <router-link to="/risparmio" class="font-semibold underline underline-offset-2">Creane uno</router-link>, poi torna qui.</span>
+              </p>
+              <p v-if="salvForm.erroreCartella" class="mt-2 flex items-center gap-1.5 text-[13px] font-semibold"><i class="ph-bold ph-warning-circle" />Scegli un salvadanaio</p>
+              <div v-if="giaAutomatici.length" class="mt-4 rounded-[20px] bg-inchiostro-velo px-4 py-3">
+                <div class="mb-1 flex items-center justify-between text-[13px] font-semibold">
+                  <span>Già in automatico</span><router-link to="/impostazioni#ricorrenti" class="underline underline-offset-2">Gestisci</router-link>
+                </div>
+                <div v-for="a in giaAutomatici" :key="a.id" class="flex items-center gap-2.5 py-1.5" :class="{ 'opacity-55': a.inPausa }">
+                  <Emoji :e="a.cartella.emoji || '🐷'" class="h-5! w-5! flex-none" />
+                  <span class="min-w-0 text-[13px]"><b class="font-semibold">{{ a.cartella.nome }}</b> · {{ eur(a.importo) }} il {{ a.giorno }} di ogni mese<template v-if="a.inPausa"> · in pausa</template></span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <span id="fonte-l" class="mb-2.5 block text-sm font-semibold">Da dove arrivano i soldi</span>
+              <div class="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="fonte-l">
+                <button
+                  v-for="f in [{ id: 'nuovi', l: 'Soldi nuovi' }, { id: 'mensili', l: 'Risparmi mensili' }]"
+                  :key="f.id"
+                  type="button"
+                  role="radio"
+                  :aria-checked="salvForm.fonte === f.id"
+                  class="h-[42px] rounded-full px-4 text-sm font-medium shadow-[inset_0_0_0_1.5px_var(--color-inchiostro-linea)]"
+                  :class="{ 'bg-inchiostro text-su-inchiostro shadow-none!': salvForm.fonte === f.id }"
+                  @click="(salvForm.fonte = f.id), (salvForm.errore = '')"
+                >
+                  {{ f.l }}
+                </button>
+              </div>
+              <p class="mt-2.5 flex items-start gap-1.5 text-[13px]">
+                <i class="ph-bold ph-info mt-0.5" />
+                <span v-if="salvForm.fonte === 'nuovi'">Si aggiungono al totale risparmiato.</span>
+                <span v-else-if="form.ricorrente">Ogni mese li prende dai Risparmi mensili dell'ultimo mese chiuso. Il totale non cambia.</span>
+                <span v-else-if="meseFonte">Escono da {{ nomeDelMese(meseFonte) }}, dove ci sono {{ eur(disponibileDi(meseFonte)) }} disponibili. Il totale non cambia.</span>
+                <span v-else>Nei Risparmi mensili non c'è un mese chiuso con abbastanza soldi.</span>
+              </p>
+              <p v-if="salvForm.errore" class="mt-2 flex items-center gap-1.5 text-[13px] font-semibold"><i class="ph-bold ph-warning-circle" />{{ salvForm.errore }}</p>
+            </div>
+          </template>
+
+          <div v-if="!speciale && !inSalvadanaio">
             <span id="cat-l" class="mb-2.5 block text-sm font-semibold">Categoria</span>
             <div class="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="cat-l">
               <button
@@ -469,10 +614,10 @@ watch(
 
           <!-- Condiviso: chi paga e come si divide -->
           <div v-if="condiviso">
-            <span id="chi-l" class="mb-2.5 block text-sm font-semibold">{{ form.tipo === "rimborso" ? "Chi ha dato i soldi" : form.tipo === "versamento" ? "Chi versa" : entrata ? "Ricevuta da" : "Pagato da" }}</span>
+            <span id="chi-l" class="mb-2.5 block text-sm font-semibold">{{ form.tipo === "rimborso" ? "Chi ha dato i soldi" : form.tipo === "versamento" || inSalvadanaio ? "Chi versa" : entrata ? "Ricevuta da" : "Pagato da" }}</span>
             <div class="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="chi-l">
               <button
-                v-for="r in speciale ? [io, altro(io)] : [io, altro(io), 'cassa']"
+                v-for="r in speciale || inSalvadanaio ? [io, altro(io)] : [io, altro(io), 'cassa']"
                 :key="r"
                 type="button"
                 role="radio"
@@ -485,7 +630,7 @@ watch(
               </button>
             </div>
           </div>
-          <div v-if="condiviso && !speciale">
+          <div v-if="condiviso && !speciale && !inSalvadanaio">
             <span id="div-l" class="mb-2.5 block text-sm font-semibold">Divisione</span>
             <div class="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="div-l">
               <button
@@ -516,7 +661,7 @@ watch(
           </div>
 
           <div>
-            <label class="mb-2.5 block text-sm font-semibold" for="desc">Descrizione</label>
+            <label class="mb-2.5 block text-sm font-semibold" for="desc">{{ inSalvadanaio ? "Nota" : "Descrizione" }}</label>
             <input id="desc" v-model="form.descrizione" placeholder="Es. Pieno Eni" autocomplete="off" class="h-[52px] w-full rounded-full bg-inchiostro-velo px-5 text-inchiostro outline-none placeholder:text-inchiostro/55 focus:shadow-[inset_0_0_0_2px_var(--color-inchiostro)]" />
           </div>
 
@@ -541,10 +686,11 @@ watch(
 
           <div v-if="!speciale" class="flex flex-col rounded-[20px] bg-inchiostro-velo">
             <label class="flex cursor-pointer items-center justify-between gap-4 px-5 py-3.5">
-              <span><b class="block text-[14.5px] font-semibold">Ricorrente</b><small class="text-[13px]">Si ripete ogni mese lo stesso giorno</small></span>
+              <span v-if="inSalvadanaio"><b class="block text-[14.5px] font-semibold">Ogni mese, in automatico</b><small class="text-[13px]">Si ripete il giorno della data scelta, finché non lo fermi</small></span>
+              <span v-else><b class="block text-[14.5px] font-semibold">Ricorrente</b><small class="text-[13px]">Si ripete ogni mese lo stesso giorno</small></span>
               <Interruttore v-model="form.ricorrente" class="sul-blocco" />
             </label>
-            <label class="flex cursor-pointer items-center justify-between gap-4 border-t border-inchiostro-velo px-5 py-3.5">
+            <label v-if="!inSalvadanaio" class="flex cursor-pointer items-center justify-between gap-4 border-t border-inchiostro-velo px-5 py-3.5">
               <span>
                 <b class="block text-[14.5px] font-semibold">{{ entrata ? "Ricevuta in contanti" : "Pagata in contanti" }}</b>
                 <small class="text-[13px]">Esclusa dal confronto con l'estratto conto</small>
@@ -553,7 +699,33 @@ watch(
             </label>
           </div>
 
-          <div v-if="!entrata && !originale">
+          <!-- Piano del versamento nel salvadanaio, aggiornato mentre si scrive -->
+          <div v-if="inSalvadanaio" class="flex flex-col gap-2.5 rounded-[20px] bg-inchiostro-velo px-5 py-4 text-[13.5px]">
+            <p v-if="!pianoSalv" class="flex items-center gap-1.5"><i class="ph-bold ph-info" />Scegli importo e salvadanaio per vedere il piano</p>
+            <template v-else>
+              <div class="flex items-center gap-3">
+                <span class="grid h-10 w-10 flex-none place-items-center rounded-full bg-inchiostro-velo text-xl"><Emoji :e="pianoSalv.c.emoji || '🐷'" /></span>
+                <span class="min-w-0">
+                  <b class="num block text-[15px] font-semibold">{{ eur(pianoSalv.importo) }} {{ form.ricorrente ? "ogni mese" : "una volta" }}</b>
+                  <small class="block text-[13px]">
+                    {{ form.ricorrente ? `il ${pianoSalv.giorno} del mese in ${pianoSalv.c.nome}` : `in ${pianoSalv.c.nome}` }} · primo
+                    {{ pianoSalv.primoOggi ? "oggi" : `il ${pianoSalv.giorno} ${nomeMese(Number(form.data.slice(5, 7))).slice(0, 3).toLowerCase()}` }}
+                  </small>
+                </span>
+              </div>
+              <div v-if="pianoSalv.percentuale !== null" class="bar bg-inchiostro-velo!"><span class="bg-inchiostro!" :style="{ width: `${pianoSalv.percentuale}%` }" /></div>
+              <div class="flex flex-wrap justify-between gap-x-3 font-semibold">
+                <template v-if="pianoSalv.raggiunto"><span>Obiettivo già raggiunto</span><span>{{ eur(pianoSalv.c.saldo, { corto: true }) }} di {{ eur(pianoSalv.c.obiettivo, { corto: true }) }}</span></template>
+                <template v-else-if="pianoSalv.arrivo"><span>Arrivi a {{ eur(pianoSalv.c.obiettivo, { corto: true }) }} a {{ pianoSalv.arrivo }}</span><span>{{ pianoSalv.versamenti }} {{ pianoSalv.versamenti === 1 ? "versamento" : "versamenti" }}</span></template>
+                <template v-else-if="pianoSalv.c.obiettivo"><span>Dopo: {{ eur(pianoSalv.dopo, { corto: true }) }} di {{ eur(pianoSalv.c.obiettivo, { corto: true }) }}</span><span>{{ Math.round(pianoSalv.percentuale) }}%</span></template>
+                <template v-else-if="pianoSalv.inUnAnno !== null"><span>Senza obiettivo</span><span>{{ eur(pianoSalv.inUnAnno, { corto: true }) }} in un anno</span></template>
+              </div>
+              <p v-if="pianoSalv.meseCorto" class="flex items-center gap-1.5 border-t border-inchiostro-velo pt-2.5"><i class="ph-bold ph-calendar-blank" />Nei mesi più corti si versa l'ultimo giorno del mese</p>
+            </template>
+          </div>
+
+          <!-- scontrino: solo per le uscite -->
+          <div v-if="form.tipo === 'uscita' && !originale">
             <!-- capture: sul telefono apre subito la fotocamera posteriore (lo scontrino si fotografa, non si cerca in galleria) -->
             <input ref="inputFoto" type="file" accept="image/*" capture="environment" class="hidden" @change="scansiona" />
             <button
@@ -577,7 +749,7 @@ watch(
 
           <div class="mt-2 flex items-center gap-3">
             <button type="submit" class="pill-btn pill-btn--ink h-[60px]! flex-1 text-base" :disabled="salvando || !walletStore.walletId">
-              {{ salvando ? "Salvo…" : originale ? "Salva modifiche" : form.tipo === "versamento" ? "Salva versamento" : entrata ? "Salva entrata" : "Salva uscita" }}
+              {{ salvando ? "Salvo…" : originale ? "Salva modifiche" : inSalvadanaio ? (form.ricorrente ? "Attiva versamento mensile" : "Versa nel salvadanaio") : form.tipo === "versamento" ? "Salva versamento" : entrata ? "Salva entrata" : "Salva uscita" }}
             </button>
             <button type="button" class="h-[60px] px-4 text-[14.5px] font-semibold underline underline-offset-4" @click="originale ? chiudiModifica() : svuota()">
               {{ originale ? "Annulla" : "Svuota" }}

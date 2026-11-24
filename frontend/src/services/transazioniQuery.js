@@ -40,5 +40,6 @@ export async function caricaRighe({ dal, al, walletId } = {}) {
     },
     sort: ["Data:asc", "id:asc"],
   });
-  return { righe: righe.map(riga), totale };
+  // i versamenti automatici nel salvadanaio non sono movimenti di cassa (§16)
+  return { righe: righe.map(riga).filter((r) => r.tipo !== "salvadanaio"), totale: totale - righe.filter((j) => j.categorie?.Tipo === "salvadanaio").length };
 }

@@ -9,7 +9,10 @@ export const statoSalvadanaio = async (wallet) => (await api.get(U, { params: { 
 export const creaSalvadanaio = async (wallet, dati) => (await api.post(U, { wallet, ...dati })).data;
 export const eliminaSalvadanaio = async (wallet, id) => (await api.delete(`${U}/${id}`, { params: { wallet } })).data;
 /** importo > 0 versa, < 0 preleva. daMese "AAAA-MM": i soldi arrivano dai Risparmi mensili. */
-export const muoviSalvadanaio = async (wallet, id, { importo, nota, daMese, chi }) =>
-  (await api.post(`${U}/${id}/movimenti`, { wallet, importo, nota, ...(daMese && { daMese }), ...(chi && { chi }) })).data;
+export const muoviSalvadanaio = async (wallet, id, { importo, nota, daMese, chi, data }) =>
+  (await api.post(`${U}/${id}/movimenti`, { wallet, importo, nota, ...(daMese && { daMese }), ...(chi && { chi }), ...(data && { data }) })).data;
 export const annullaMovimento = async (wallet, id) => (await api.delete(`${U}/movimenti/${id}`, { params: { wallet } })).data;
 export const impostaRisparmio = async (wallet, mese, importo) => (await api.put(`${U}/risparmio`, { wallet, mese, importo })).data;
+/** Versamento ogni mese, in automatico (Transazioni → Salvadanaio). Il primo va subito se la data è oggi o passata. */
+export const attivaVersamentoAutomatico = async (wallet, id, { importo, fonte, data, nota, chi }) =>
+  (await api.post(`${U}/${id}/automatico`, { wallet, importo, fonte, data, nota, ...(chi && { chi }) })).data;

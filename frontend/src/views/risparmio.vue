@@ -74,6 +74,8 @@ const corrente = computed(() => (stato.value?.mesi || []).find((m) => m.mese ===
 const barrette = computed(() => [...chiusi.value.slice(0, 5)].reverse());
 const massimo = computed(() => Math.max(1, ...(stato.value?.mesi || []).map((m) => m.risparmio)));
 const cartella = computed(() => personali.value.find((p) => p.id === sel.value));
+// Quanto entra in automatico ogni mese (versamenti attivi, non in pausa)
+const mensileAuto = (c) => c.automatici.filter((a) => !a.inPausa).reduce((s, a) => s + a.importo, 0);
 const mesiDisponibili = computed(() => (stato.value?.mesi || []).filter((m) => m.disponibile > 0));
 
 function scegli(id) {
@@ -221,7 +223,10 @@ async function crea() {
           :aria-pressed="sel === p.id"
           @click="scegli(p.id)"
         >
-          <span class="grid h-12 w-12 place-items-center rounded-full bg-inchiostro-velo text-[26px]"><Emoji :e="p.emoji || '🐷'" /></span>
+          <span class="flex items-center justify-between gap-2">
+            <span class="grid h-12 w-12 place-items-center rounded-full bg-inchiostro-velo text-[26px]"><Emoji :e="p.emoji || '🐷'" /></span>
+            <span v-if="mensileAuto(p)" class="chip whitespace-nowrap"><i class="ph-bold ph-arrows-clockwise" />{{ eur(mensileAuto(p), { corto: true }) }}/mese</span>
+          </span>
           <span class="truncate text-base font-semibold tracking-[-0.015em]">{{ p.nome }}</span>
           <span class="num mt-auto text-[26px] leading-none sm:text-[34px]">{{ eur(p.saldo, { corto: true }) }}</span>
           <span v-if="p.obiettivo">
@@ -382,6 +387,16 @@ async function crea() {
               <div class="grid grid-cols-2 gap-2">
                 <button class="pill-btn pill-btn--cream h-12!" :disabled="occupato" @click="muovi(1)">Versa</button>
                 <button class="pill-btn pill-btn--ghost h-12!" :disabled="occupato || mov.da === 'mensili'" @click="muovi(-1)">Preleva</button>
+              </div>
+              <!-- Versamenti automatici di questa cartella (progetto.md §16) -->
+              <div class="border-t border-bordo pt-4">
+                <div v-for="a in cartella.automatici" :key="a.id" class="flex items-center gap-2 py-1 text-[13px]" :class="{ 'text-testo3': a.inPausa }">
+                  <i class="ph-bold ph-arrows-clockwise" />
+                  <span>{{ eur(a.importo) }} il {{ a.giorno }} di ogni mese<template v-if="a.fonte === 'mensili'"> · dai Risparmi mensili</template><template v-if="a.inPausa"> · in pausa</template></span>
+                </div>
+                <router-link :to="`/transazioni?tipo=salvadanaio&verso=${cartella.id}`" class="mt-1 inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-fg-accento underline-offset-[3px] hover:underline">
+                  <i class="ph-bold ph-plus" />Versa ogni mese in automatico
+                </router-link>
               </div>
             </aside>
           </div>
