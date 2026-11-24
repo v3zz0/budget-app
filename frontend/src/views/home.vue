@@ -2,7 +2,6 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
-import { useConsigliStore } from "@/stores/consigli.js";
 import { useDashboardStore } from "@/stores/dashboard.js";
 import { useWalletStore } from "@/stores/wallet.js";
 import { creaWallet } from "@/services/impostazioni.js";
@@ -24,7 +23,6 @@ const route = useRoute();
 const toast = useToast();
 const dashboard = useDashboardStore();
 const walletStore = useWalletStore();
-const consigli = useConsigliStore();
 
 // Primo avvio: l'account lo crea l'amministratore e parte senza nulla.
 const primo = reactive({ nome: "", budget: null, salvando: false });
@@ -54,17 +52,11 @@ watch(
   },
   { immediate: true },
 );
-// pallino della campanella: i consigli da guardare del portafoglio scelto
-const daGuardare = computed(() =>
-  consigli.lista.filter((c) => (c.stato === "nuovo" || c.stato === "letto") && c.categorie?.wallet?.documentId === walletStore.walletId).length,
-);
 const cartelle = computed(() => salvadanaio.value?.cartelle || []);
 const totaleSalvadanaio = computed(() => cartelle.value.reduce((s, c) => s + c.saldo, 0));
 // I tre salvadanai più ricchi
 const piuRicchi = computed(() => [...cartelle.value].sort((a, b) => b.saldo - a.saldo).slice(0, 3));
 
-// I consigli li genera il cron a fine mese: qui si leggono e basta.
-onMounted(() => consigli.carica());
 watch(() => walletStore.walletId, (id) => id && dashboard.carica(id), { immediate: true });
 
 // Link di una notifica di sforamento: ?portafoglio=&categoria=&mese=AAAA-MM
@@ -250,15 +242,6 @@ const breve = (d) => `${Number(d.slice(8, 10))} ${nome.value.slice(0, 3).toLower
           </div>
           <!-- condiviso su telefono: "Totale / La mia parte" su una riga, le quattro icone sotto -->
           <span v-if="condiviso" class="hidden basis-full max-[640px]:block" aria-hidden="true" />
-          <router-link
-            to="/consigli"
-            class="circle-btn relative"
-            :aria-label="daGuardare ? `Consigli sul budget, ${daGuardare} da guardare` : 'Consigli sul budget'"
-            title="Consigli sul budget"
-          >
-            <i class="ph-bold ph-bell" />
-            <span v-if="daGuardare" class="num absolute -top-[3px] -right-[3px] h-5 min-w-5 rounded-full bg-arancio px-[5px] text-center text-[11.5px] leading-5 font-semibold text-inchiostro ring-[3px] ring-fondo">{{ daGuardare }}</span>
-          </router-link>
           <router-link to="/anno" class="circle-btn" aria-label="Riepilogo dell'anno" title="Riepilogo dell'anno"><i class="ph-bold ph-chart-bar" /></router-link>
           <span class="mx-1 h-6 w-px self-center bg-bordo-forte" aria-hidden="true" />
           <button class="circle-btn" aria-label="Mese precedente" @click="dashboard.cambiaMese(-1)"><i class="ph-bold ph-caret-left" /></button>

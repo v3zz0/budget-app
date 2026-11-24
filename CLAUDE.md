@@ -78,6 +78,13 @@ Stato del porting Flutter → Vue (fasi):
    grafica nuova e **Annulla** (`POST /api/consiglios/:id/annulla` rimette il
    budget di prima); Anno rifatto (stima = budget × mesi **con movimenti**).
 
+8. ✅ demoV3 (2026-11-24, `budgetApp/demoThomas/demoV3/`, §21 e §22): campanella
+   dei Consigli nell'header col pallino su ogni pagina (store `consigli`, letto
+   da `Wheader.vue`); barra in basso Home · Transazioni · (+) · Salvadanaio ·
+   Analisi; **Impostazioni solo dal menu della foto** (anello sull'avatar e
+   pallino sulla voce). Notifiche con pillole, anteprima "Come le vedrai" e
+   riga riassuntiva nel menu. Provato su SQLite, **non** pubblicato.
+
 ## Struttura repository
 
 **Monorepo** (dal 2026-11-20, come `pulse-app`): il repository `budget-app`
@@ -563,9 +570,9 @@ Convenzioni:
   `.pill-btn--cream|ink|ghost`, selettori `.seg`, campi `.campo`
 - Importi con `eur()` / `<Euro :v>` (`utils/formato.js`): "€1.388,00" coi
   decimali attenuati, il negativo porta il segno "−", non solo il colore
-- Pillola di navigazione flottante (Home · Transazioni · Analisi ·
-  Impostazioni), scura anche di giorno (token `dock-*`); il salvadanaio è il
-  cerchio crema nell'header
+- Pillola di navigazione flottante (Home · Transazioni · (+ su telefono) ·
+  Salvadanaio · Analisi), scura anche di giorno (token `dock-*`); nell'header
+  la campanella dei Consigli e la foto col menu account (Impostazioni sta lì)
 - Pagine verificate a 1280, 375 e 320 px: niente sbordamenti (`minmax(0,1fr)`,
   `min-w-0`, `truncate` dove serve)
 

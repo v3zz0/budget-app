@@ -209,9 +209,7 @@ function interrompi(t) {
     </div>
 
     <div v-if="voci.length" class="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-bordo pt-5 text-sm text-testo2">
-      <span>Entrano in automatico <b class="num font-medium text-fg-positivo">{{ eur(totale(true), { segno: true }) }}</b> al mese</span>
-      <span>Escono <b class="num font-medium text-fg-negativo">{{ eur(-totale(false)) }}</b> al mese</span>
-      <span v-if="nelSalvadanaio" class="basis-full">Vanno nel salvadanaio <b class="num font-medium text-testo">{{ eur(nelSalvadanaio) }}</b> al mese</span>
+      <span>Ogni mese, in automatico: entrano <b class="num font-medium text-fg-positivo">{{ eur(totale(true)) }}</b><template v-if="nelSalvadanaio">, escono <b class="num font-medium text-fg-negativo">{{ eur(totale(false)) }}</b> e <b class="num font-medium text-testo">{{ eur(nelSalvadanaio) }}</b> vanno nel salvadanaio</template><template v-else> ed escono <b class="num font-medium text-fg-negativo">{{ eur(totale(false)) }}</b></template></span>
     </div>
   </section>
 </template>

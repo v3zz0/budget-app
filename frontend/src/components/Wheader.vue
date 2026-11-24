@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
 import { useAuthStore } from "@/stores/auth.js";
 import { useWalletStore } from "@/stores/wallet.js";
+import { useConsigliStore } from "@/stores/consigli.js";
 import { erroreLeggibile } from "@/services/api.js";
 import { temaChiaro } from "@/tema.js";
 import Avatar from "./Avatar.vue";
@@ -13,19 +14,25 @@ const router = useRouter();
 const toast = useToast();
 const auth = useAuthStore();
 const walletStore = useWalletStore();
+const consigli = useConsigliStore();
+// pallino della campanella su ogni pagina (§21): i consigli da guardare del portafoglio scelto
+const daGuardare = computed(() =>
+  consigli.lista.filter((c) => (c.stato === "nuovo" || c.stato === "letto") && c.categorie?.wallet?.documentId === walletStore.walletId).length,
+);
+onMounted(() => consigli.carica());
 
-// Quattro voci: sono anche quelle della pillola in basso.
+// Pillola in basso (§21). Impostazioni si apre solo dal menu della foto profilo.
 const voci = [
   { label: "Home", icon: "ph-house", to: "/" },
   { label: "Transazioni", icon: "ph-arrows-left-right", to: "/transazioni" },
+  { label: "Salvadanaio", icon: "ph-piggy-bank", to: "/risparmio" },
   { label: "Analisi", icon: "ph-file-magnifying-glass", to: "/analisi" },
-  { label: "Impostazioni", icon: "ph-gear-six", to: "/impostazioni" },
 ];
+const inImpostazioni = computed(() => router.currentRoute.value.path.startsWith("/impostazioni"));
 const attiva = (to) => {
   const p = router.currentRoute.value.path;
-  // Anno e Consigli si aprono dalla Home
-  if (to === "/") return p === "/" || p.startsWith("/anno") || p.startsWith("/consigli");
-  if (to === "/impostazioni") return p.startsWith("/impostazioni");
+  // Anno si apre dalla Home; Consigli ha la campanella nell'header
+  if (to === "/") return p === "/" || p.startsWith("/anno");
   return p.startsWith(to);
 };
 
@@ -161,20 +168,22 @@ function esci() {
 
     <div class="flex-1" />
     <router-link
-      to="/risparmio"
-      class="circle-btn bg-crema! text-inchiostro! hover:bg-crema-scuro!"
-      :class="{ 'ring-2 ring-anello ring-offset-2 ring-offset-fondo': $route.path === '/risparmio' }"
-      aria-label="Salvadanaio"
-      title="Salvadanaio"
+      to="/consigli"
+      class="circle-btn relative"
+      :class="{ 'ring-2 ring-anello ring-offset-2 ring-offset-fondo': $route.path.startsWith('/consigli') }"
+      :aria-current="$route.path.startsWith('/consigli') ? 'page' : undefined"
+      :aria-label="daGuardare ? `Consigli sul budget, ${daGuardare} da guardare` : 'Consigli sul budget'"
+      :title="daGuardare ? `Consigli sul budget, ${daGuardare} da guardare` : 'Consigli sul budget'"
     >
-      <i class="ph-bold ph-piggy-bank" />
+      <i class="ph-bold ph-bell" />
+      <span v-if="daGuardare" class="num absolute -top-[3px] -right-[3px] h-5 min-w-5 rounded-full bg-arancio px-[5px] text-center text-[11.5px] leading-5 font-semibold text-inchiostro ring-[3px] ring-fondo">{{ daGuardare }}</span>
     </router-link>
     <!-- Menu dell'account: dalla foto profilo (Esci sta qui dentro) -->
     <div ref="menuAccount" class="relative flex-none" @keydown="aperto === 'account' && tastiAccount($event)">
       <button
         ref="btnAccount"
         class="grid h-11 w-11 place-items-center rounded-full transition-shadow max-[380px]:h-[38px] max-[380px]:w-[38px] hover:ring-2 hover:ring-bordo-forte"
-        :class="{ 'ring-2 ring-anello ring-offset-2 ring-offset-fondo': aperto === 'account' }"
+        :class="{ 'ring-2 ring-anello ring-offset-2 ring-offset-fondo': aperto === 'account' || inImpostazioni }"
         aria-haspopup="menu"
         :aria-expanded="aperto === 'account'"
         aria-label="Il tuo account"
@@ -205,6 +214,7 @@ function esci() {
           @click="aperto = null"
         >
           <span class="grid h-9 w-9 place-items-center rounded-full bg-campo text-[17px]"><i class="ph-bold" :class="v.i" /></span><b class="font-medium">{{ v.l }}</b>
+          <span v-if="v.to === '/impostazioni' && inImpostazioni" class="ml-auto h-2 w-2 rounded-full bg-fg-accento" aria-label="pagina attuale" />
         </router-link>
         <button role="menuitem" class="flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-left hover:bg-campo focus-visible:bg-campo" @click="apriFeedback">
           <span class="grid h-9 w-9 place-items-center rounded-full bg-campo text-[17px]"><i class="ph-bold ph-chat-circle-text" /></span><b class="font-medium">Invia feedback</b>

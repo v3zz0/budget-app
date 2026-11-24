@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { statoNotifiche } from "@/services/notifiche.js";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth.js";
 import { useWalletStore } from "@/stores/wallet.js";
@@ -24,6 +25,17 @@ const walletStore = useWalletStore();
 const MOTORI = { ollama: "Server Ollama", llamacpp: "llama.cpp", openrouter: "OpenRouter" };
 const TEMI = { sistema: "Segue il dispositivo", giorno: "Giorno", notte: "Notte" };
 
+// Riga del menu "Notifiche": cosa è attivo (§22). ponytail: letta all'apertura, si aggiorna rientrando.
+const notifiche = ref(null);
+onMounted(() => statoNotifiche().then((s) => (notifiche.value = s)).catch(() => {}));
+const sottoNotifiche = computed(() => {
+  const s = notifiche.value;
+  if (!s) return "Scadenze e avvisi sul budget";
+  if (!s.attivo) return "Spente su questo dispositivo";
+  const v = [s.preferenze?.scadenze != null && "Scadenze", s.preferenze?.budget && "sforamenti"].filter(Boolean);
+  return v.length ? v.join(" e ").replace(/^s/, "S") : "Nessun avviso scelto";
+});
+
 const sezioni = computed(() => [
   { id: "profilo", icona: "ph-user", titolo: "Profilo utente", sotto: auth.userInfo.email || "Nome, email e password", comp: Profilo },
   {
@@ -37,7 +49,7 @@ const sezioni = computed(() => [
   { id: "ricorrenti", icona: "ph-repeat", titolo: "Transazioni ricorrenti", sotto: "Registrate in automatico ogni mese", comp: Ricorrenti },
   { id: "aspetto", icona: "ph-circle-half", titolo: "Aspetto", sotto: TEMI[preferenzaTema.value], comp: Aspetto },
   { id: "export", icona: "ph-download-simple", titolo: "Esporta dati", sotto: "CSV per anno o per mese", comp: Esporta },
-  { id: "notifiche", icona: "ph-bell", titolo: "Notifiche", sotto: "Scadenze e avvisi sul budget", comp: Notifiche },
+  { id: "notifiche", icona: "ph-bell", titolo: "Notifiche", sotto: sottoNotifiche.value, comp: Notifiche },
   { id: "ai", icona: "ph-sparkle", titolo: "Analisi AI", sotto: MOTORI[auth.userInfo.aiMotore] || "Quale modello analizza gli estratti", comp: Ai },
 ]);
 
