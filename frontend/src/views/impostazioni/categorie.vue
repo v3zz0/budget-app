@@ -1,4 +1,5 @@
 <script setup>
+import { useMovimentoStore } from "@/stores/movimento.js";
 import { computed, reactive, ref, watch } from "vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
@@ -16,6 +17,7 @@ import SceltaEmoji from "@/components/SceltaEmoji.vue";
 const confirm = useConfirm();
 const toast = useToast();
 const walletStore = useWalletStore();
+const mov = useMovimentoStore();
 const avviso = (severity, summary, detail) => toast.add({ severity, summary, detail, life: 3500 });
 
 const oggi = new Date();
@@ -45,6 +47,7 @@ async function carica() {
   }
 }
 watch(() => walletStore.walletId, () => ((aperta.value = null), carica()), { immediate: true });
+watch(() => mov.versione, () => carica());
 
 // Le nascoste (da "+ Altro" senza "Aggiungi alle mie categorie") e quelle di
 // sistema del condiviso non si gestiscono da qui.

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { useWalletStore } from "@/stores/wallet.js";
+import { useMovimentoStore } from "@/stores/movimento.js";
 import { caricaConto, caricaMese } from "@/services/dashboard.js";
 import { attivaVersamentoAutomatico, muoviSalvadanaio, statoSalvadanaio } from "@/services/salvadanaio.js";
 import { meseDaCuiPrendere, piano } from "@/utils/piano.js";
@@ -23,13 +24,20 @@ import Avatar from "@/components/Avatar.vue";
 import { altro, bilancio, effetto, miaQuota, saldoCassa } from "@/utils/conti.js";
 
 // id presente (dalla route) = modifica nello stesso foglio, assente = nuova
-const props = defineProps({ id: { type: String, default: null } });
+// foglio = dentro il foglio "Nuovo movimento" (components/MovimentoSheet.vue, §23):
+// solo il form, le opzioni arrivano da opz invece che dall'indirizzo.
+const props = defineProps({ id: { type: String, default: null }, foglio: Boolean, opz: { type: Object, default: () => ({}) } });
+const emit = defineEmits(["chiudi", "salvato"]);
 
 const route = useRoute();
 const router = useRouter();
 const confirm = useConfirm();
 const toast = useToast();
 const walletStore = useWalletStore();
+const mov = useMovimentoStore();
+// Telefono: la pagina è solo lo storico, si registra e si modifica dal foglio (§23)
+const telefono = ref(matchMedia("(max-width: 640px)").matches);
+const q = computed(() => (props.foglio ? { ...props.opz, ricorrente: props.opz.ricorrente ? "1" : undefined } : route.query));
 const avviso = (severity, summary, detail) => toast.add({ severity, summary, detail, life: 3500 });
 
 const oggi = new Date();
@@ -103,7 +111,7 @@ const gruppi = computed(() => perGiorno(visibili.value, oggi));
 
 // ── Form ─────────────────────────────────────────────────────────────────────
 const vuoto = () => ({
-  tipo: ["entrata", "versamento", "salvadanaio"].includes(route.query.tipo) ? route.query.tipo : "uscita",
+  tipo: ["entrata", "versamento", "salvadanaio"].includes(q.value.tipo) ? q.value.tipo : "uscita",
   pagatoDa: null, // condiviso: ruolo di chi paga (null = io)
   miaQuota: null, // condiviso: la mia parte 0..1 (null = regola del portafoglio)
   importo: "",
@@ -111,7 +119,7 @@ const vuoto = () => ({
   descrizione: "",
   data: OGGI,
   // nel salvadanaio parte già come versamento mensile (progetto.md §16)
-  ricorrente: route.query.ricorrente === "1" || route.query.tipo === "salvadanaio",
+  ricorrente: q.value.ricorrente === "1" || q.value.tipo === "salvadanaio",
   contanti: false,
 });
 const form = reactive(vuoto());
@@ -123,14 +131,14 @@ const originale = ref(null); // la transazione aperta in modifica
 const scansione = ref(false);
 const righeLette = ref(null);
 const inputFoto = ref(null);
-const foglio = ref(null);
+const sezioneForm = ref(null);
 
 const entrata = computed(() => form.tipo === "entrata");
 const inSalvadanaio = computed(() => form.tipo === "salvadanaio");
 
 // ── Versamento nel salvadanaio (progetto.md §16) ────────────────────────────
 const salv = ref(null); // stato del salvadanaio del portafoglio
-const salvForm = reactive({ cartella: route.query.verso || null, fonte: "nuovi", errore: "", erroreCartella: false });
+const salvForm = reactive({ cartella: q.value.verso || null, fonte: "nuovi", errore: "", erroreCartella: false });
 watch(
   () => walletStore.walletId,
   async (id) => (salv.value = id ? await statoSalvadanaio(id).catch(() => null) : null),
@@ -171,6 +179,7 @@ async function salvaSalvadanaio(importo) {
       ? `${eur(importo)} ogni mese in ${c.nome}${subito ? " · primo versato oggi" : ` · dal ${Number(form.data.slice(8, 10))} ${nomeMese(Number(form.data.slice(5, 7))).toLowerCase()}`}`
       : `${eur(importo)} in ${c.nome}${daMese ? ` · da ${nomeDelMese(daMese)}` : ""}`,
   );
+  if (props.foglio) return emit("salvato", form.data);
   // il form resta su Salvadanaio, pronto per un altro
   Object.assign(form, { importo: "", descrizione: "", data: OGGI, ricorrente: true });
 }
@@ -271,31 +280,46 @@ watch(
       // Categoria nascosta: si riapre su "Altro" con nome ed emoji compilati
       Object.assign(altra, c?.Nascosta ? { attivo: true, nome: c.Nome, icona: c.icona || "🏷️", aggiungi: false } : { attivo: false, nome: "", icona: "🏷️", aggiungi: true });
       Object.assign(errori, { importo: false, categoria: false, altro: "" });
+      if (props.foglio) return;
       vaiAlMese(t.Data);
       await carica();
-      if (innerWidth <= 980) foglio.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (innerWidth <= 980) sezioneForm.value?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (e) {
       avviso("error", "Movimento non trovato", erroreLeggibile(e));
-      router.replace("/transazioni");
+      if (props.foglio) emit("chiudi");
+      else router.replace("/transazioni");
     }
   },
   { immediate: true },
 );
 
 function chiudiModifica() {
+  if (props.foglio) return emit("chiudi");
   router.push({ path: "/transazioni", query: {} });
 }
 function apriMovimento(m) {
+  if (telefono.value) return mov.apri({ id: m.documentId });
   if (props.id === m.documentId) return chiudiModifica(); // secondo clic sulla stessa riga
   router.push(`/transazioni/${m.documentId}`);
 }
-const esc = (e) => e.key === "Escape" && props.id && chiudiModifica();
+const esc = (e) => e.key === "Escape" && props.id && !props.foglio && chiudiModifica();
 onMounted(() => {
+  if (props.foglio) return;
   document.addEventListener("keydown", esc);
-  // "+" della pillola (?rapida=1): cursore subito nell'importo, si apre la tastiera
-  if (route.query.rapida === "1" && !props.id) document.getElementById("imp")?.focus();
+  // Telefono: /transazioni?tipo=… e /transazioni/:id aprono il foglio sopra lo storico
+  if (telefono.value && (props.id || route.query.tipo || route.query.ricorrente)) {
+    mov.apri({ id: props.id, tipo: route.query.tipo, verso: route.query.verso, ricorrente: route.query.ricorrente === "1" });
+    router.replace({ path: "/transazioni", query: {} });
+  }
 });
 onBeforeUnmount(() => document.removeEventListener("keydown", esc));
+// Salvato dal foglio: l'elenco va sul mese del movimento e si ricarica
+watch(() => mov.versione, () => {
+  if (props.foglio) return;
+  if (mov.ultimaData) vaiAlMese(mov.ultimaData);
+  carica();
+  caricaContoCondiviso();
+});
 
 /** La categoria da usare: quella scelta, oppure quella di "+ Altro" (trovata o creata). */
 async function categoriaDaUsare() {
@@ -354,6 +378,13 @@ async function salva() {
     let id = props.id;
     if (id) await aggiornaTransazione(id, t);
     else id = (await creaTransazione(t)).data.data.documentId;
+    if (props.foglio) {
+      const cosa = props.id ? "Modifiche salvate"
+        : form.tipo === "versamento" ? `Versamento di ${eur(importo)} salvato`
+        : `${entrata.value ? "Entrata" : "Uscita"} di ${eur(importo)} salvata`;
+      avviso("success", cosa);
+      return emit("salvato", form.data);
+    }
     vaiAlMese(form.data); // il movimento si sposta nel mese giusto e l'elenco lo segue
     await carica();
     evidenziato.value = id;
@@ -384,6 +415,7 @@ function elimina() {
       try {
         await eliminaTransazione(t.documentId);
         avviso("success", "Movimento eliminato");
+        if (props.foglio) return emit("salvato", t.Data);
         caricaContoCondiviso();
         chiudiModifica();
         await carica();
@@ -416,31 +448,33 @@ async function scansiona(e) {
 
 watch(
   () => route.query.verso,
-  (v) => v && (salvForm.cartella = v),
+  (v) => !props.foglio && v && (salvForm.cartella = v),
 );
 watch(
   () => route.query.tipo,
-  (t) => !props.id && ["entrata", "uscita", "versamento", "salvadanaio"].includes(t) && scegliTipo(t),
+  (t) => !props.foglio && !props.id && ["entrata", "uscita", "versamento", "salvadanaio"].includes(t) && scegliTipo(t),
 );
 </script>
 
 <template>
   <div>
-    <div class="mb-8 sm:mb-10">
-      <div class="eyebrow">Registra e consulta</div>
+    <div v-if="!foglio" class="mb-8 sm:mb-10">
+      <div class="eyebrow">{{ telefono ? "Storico dei movimenti" : "Registra e consulta" }}</div>
       <h1 class="display">Transazioni</h1>
     </div>
 
-    <div class="grid grid-cols-[minmax(0,1fr)] items-start gap-3 min-[981px]:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
+    <div class="grid grid-cols-[minmax(0,1fr)] items-start gap-3" :class="{ 'min-[981px]:grid-cols-[minmax(0,460px)_minmax(0,1fr)]': !foglio }">
       <!-- Foglio del form: prende il colore del tipo -->
       <section
-        ref="foglio"
+        ref="sezioneForm"
         class="reveal scroll-mt-4 rounded-[20px] px-5 py-6 text-inchiostro transition-colors duration-300 sm:rounded-[28px] sm:p-8"
-        :class="inSalvadanaio ? 'bg-crema' : speciale ? 'bg-pietra' : entrata ? 'bg-salvia' : 'bg-arancio'"
+        v-if="foglio || !telefono"
+        :class="[inSalvadanaio ? 'bg-crema' : speciale ? 'bg-pietra' : entrata ? 'bg-salvia' : 'bg-arancio', { 'pt-8!': foglio }]"
         aria-labelledby="titolo-foglio"
       >
-        <div v-if="originale" class="mb-5 flex items-center justify-between gap-3">
-          <div class="flex flex-wrap gap-1.5 text-[12.5px] font-semibold">
+        <div v-if="originale || foglio" class="mb-5 flex items-center justify-between gap-3">
+          <b v-if="foglio && !originale" class="text-[17px] font-semibold">{{ titolo }}</b>
+          <div v-if="originale" class="flex flex-wrap gap-1.5 text-[12.5px] font-semibold">
             <span class="inline-flex h-[30px] items-center gap-1.5 rounded-full bg-inchiostro pr-3 pl-2.5 text-su-inchiostro"><i class="ph-bold ph-pencil-simple" />Modifica</span>
             <span class="inline-flex h-[30px] items-center gap-1.5 rounded-full bg-inchiostro-velo pr-3 pl-2.5"><i class="ph-bold ph-calendar-blank" />{{ dataIt(originale.Data) }}</span>
             <span v-if="condiviso && originale.creatoDa" class="inline-flex h-[30px] items-center gap-1.5 rounded-full bg-inchiostro-velo pr-3 pl-1.5">
@@ -451,7 +485,7 @@ watch(
             </span>
             <span v-if="originale.TransazioneRicorrente" class="inline-flex h-[30px] items-center gap-1.5 rounded-full bg-inchiostro-velo pr-3 pl-2.5"><i class="ph-bold ph-repeat" />Ogni mese</span>
           </div>
-          <button type="button" class="grid h-10 w-10 flex-none place-items-center rounded-full bg-inchiostro-velo text-[17px] hover:bg-inchiostro-linea" aria-label="Chiudi la modifica" @click="chiudiModifica">
+          <button type="button" class="grid h-10 w-10 flex-none place-items-center rounded-full bg-inchiostro-velo text-[17px] hover:bg-inchiostro-linea" :aria-label="foglio ? 'Chiudi' : 'Chiudi la modifica'" @click="chiudiModifica">
             <i class="ph-bold ph-x" />
           </button>
         </div>
@@ -478,7 +512,7 @@ watch(
           </button>
         </div>
 
-        <h2 id="titolo-foglio" class="mb-6 text-[28px] leading-[1.05] font-medium tracking-[-0.04em] sm:mb-8 sm:text-[34px]">{{ titolo }}</h2>
+        <h2 id="titolo-foglio" :class="{ 'sr-only': foglio }" class="mb-6 text-[28px] leading-[1.05] font-medium tracking-[-0.04em] sm:mb-8 sm:text-[34px]">{{ titolo }}</h2>
 
         <form class="flex flex-col gap-6" novalidate @submit.prevent="salva">
           <div>
@@ -751,8 +785,8 @@ watch(
             <button type="submit" class="pill-btn pill-btn--ink h-[60px]! flex-1 text-base" :disabled="salvando || !walletStore.walletId">
               {{ salvando ? "Salvo…" : originale ? "Salva modifiche" : inSalvadanaio ? (form.ricorrente ? "Attiva versamento mensile" : "Versa nel salvadanaio") : form.tipo === "versamento" ? "Salva versamento" : entrata ? "Salva entrata" : "Salva uscita" }}
             </button>
-            <button type="button" class="h-[60px] px-4 text-[14.5px] font-semibold underline underline-offset-4" @click="originale ? chiudiModifica() : svuota()">
-              {{ originale ? "Annulla" : "Svuota" }}
+            <button type="button" class="h-[60px] px-4 text-[14.5px] font-semibold underline underline-offset-4" @click="originale || foglio ? chiudiModifica() : svuota()">
+              {{ originale || foglio ? "Annulla" : "Svuota" }}
             </button>
           </div>
           <button v-if="originale" type="button" class="-mt-1.5 flex h-11 w-full items-center justify-center gap-2 rounded-full text-sm font-semibold hover:bg-inchiostro-velo" @click="elimina">
@@ -762,7 +796,7 @@ watch(
       </section>
 
       <!-- Elenco del mese -->
-      <section class="panel reveal" style="--i: 1" aria-label="Movimenti del mese">
+      <section v-if="!foglio" class="panel reveal" style="--i: 1" aria-label="Movimenti del mese">
         <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
           <MeseNav v-model="mese" @sposta="sposta" />
           <div class="seg" role="group" aria-label="Filtra i movimenti">

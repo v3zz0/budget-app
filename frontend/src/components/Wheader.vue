@@ -5,6 +5,7 @@ import { useToast } from "primevue/usetoast";
 import { useAuthStore } from "@/stores/auth.js";
 import { useWalletStore } from "@/stores/wallet.js";
 import { useConsigliStore } from "@/stores/consigli.js";
+import { useMovimentoStore } from "@/stores/movimento.js";
 import { erroreLeggibile } from "@/services/api.js";
 import { temaChiaro } from "@/tema.js";
 import Avatar from "./Avatar.vue";
@@ -15,6 +16,7 @@ const toast = useToast();
 const auth = useAuthStore();
 const walletStore = useWalletStore();
 const consigli = useConsigliStore();
+const mov = useMovimentoStore();
 // pallino della campanella su ogni pagina (§21): i consigli da guardare del portafoglio scelto
 const daGuardare = computed(() =>
   consigli.lista.filter((c) => (c.stato === "nuovo" || c.stato === "letto") && c.categorie?.wallet?.documentId === walletStore.walletId).length,
@@ -233,9 +235,9 @@ function esci() {
   >
     <template v-for="(v, i) in voci" :key="v.to">
       <!-- Su telefono, al centro: "+" per segnare subito un'uscita (progetto.md §17) -->
-      <router-link v-if="i === 2" to="/transazioni?tipo=uscita&rapida=1" class="dock-piu" aria-label="Registra un movimento">
+      <button v-if="i === 2" type="button" class="dock-piu" aria-label="Nuova uscita" title="Nuova uscita" @click="mov.apri({ tipo: 'uscita' })">
         <i class="ph-bold ph-plus" />
-      </router-link>
+      </button>
       <router-link :to="v.to" :aria-label="v.label" :aria-current="attiva(v.to) ? 'page' : undefined" class="dock-voce">
         <i class="ph-bold" :class="v.icon" />
         <span v-if="attiva(v.to)">{{ v.label }}</span>
@@ -274,18 +276,19 @@ function esci() {
 .dock-voce:hover { color: var(--color-dock-testo-on); }
 .dock-voce[aria-current="page"] { background: var(--color-dock-attiva); color: var(--color-inchiostro); padding: 0 20px 0 17px; }
 .dock-voce span { font-size: 14.5px; font-weight: 500; }
-.dock-piu { display: none; }
+/* "+" della barra, su telefono e al computer: apre il foglio Nuovo movimento (§23) */
+.dock-piu {
+  display: grid; place-items: center; width: 60px; height: 60px; margin: -10px 2px; border-radius: 999px;
+  background: var(--color-arancio); color: var(--color-inchiostro); font-size: 24px;
+  box-shadow: 0 0 0 5px var(--color-dock-fondo); transition: transform 0.15s;
+}
+.dock-piu:hover { transform: scale(1.05); }
+.dock-piu:active { transform: scale(0.94); }
 @media (max-width: 640px) {
   .dock-voce { height: 48px; min-width: 48px; }
   /* Cinque posti: la pagina attiva resta crema, senza scritta */
   .dock-voce[aria-current="page"] { padding: 0 15px; }
   .dock-voce span { display: none; }
-  .dock-piu {
-    display: grid; place-items: center; width: 60px; height: 60px; margin: -10px 2px; border-radius: 999px;
-    background: var(--color-arancio); color: var(--color-inchiostro); font-size: 24px;
-    box-shadow: 0 0 0 5px var(--color-dock-fondo); transition: transform 0.15s;
-  }
-  .dock-piu:active { transform: scale(0.94); }
 }
 @media (max-width: 360px) {
   .dock-voce { height: 44px; min-width: 44px; padding: 0 12px; font-size: 18px; }

@@ -1,4 +1,5 @@
 <script setup>
+import { useMovimentoStore } from "@/stores/movimento.js";
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
@@ -15,6 +16,7 @@ import Avatar from "@/components/Avatar.vue";
 const confirm = useConfirm();
 const toast = useToast();
 const walletStore = useWalletStore();
+const foglioMov = useMovimentoStore();
 const avviso = (severity, summary, detail) => toast.add({ severity, summary, detail, life: 3500 });
 
 const EMOJI = ["🚗", "✈️", "🏠", "🛟", "🎓", "💍", "🎁", "💻", "🏖️", "🐶", "🎸", "👶", "🛋️", "📷", "🚲", "🌱"];
@@ -41,6 +43,7 @@ async function carica() {
 }
 // Il salvadanaio è del portafoglio: cambiandolo cambia tutta la pagina.
 watch(() => walletStore.walletId, () => ((sel.value = "std"), carica()), { immediate: true });
+watch(() => foglioMov.versione, () => carica());
 
 // Ogni scrittura risponde con lo stato aggiornato
 async function esegui(fn, ok) {
@@ -394,9 +397,9 @@ async function crea() {
                   <i class="ph-bold ph-arrows-clockwise" />
                   <span>{{ eur(a.importo) }} il {{ a.giorno }} di ogni mese<template v-if="a.fonte === 'mensili'"> · dai Risparmi mensili</template><template v-if="a.inPausa"> · in pausa</template></span>
                 </div>
-                <router-link :to="`/transazioni?tipo=salvadanaio&verso=${cartella.id}`" class="mt-1 inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-fg-accento underline-offset-[3px] hover:underline">
+                <button type="button" @click="foglioMov.apri({ tipo: 'salvadanaio', verso: cartella.id, ricorrente: true })" class="mt-1 inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-fg-accento underline-offset-[3px] hover:underline">
                   <i class="ph-bold ph-plus" />Versa ogni mese in automatico
-                </router-link>
+                </button>
               </div>
             </aside>
           </div>

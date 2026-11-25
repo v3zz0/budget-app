@@ -84,6 +84,15 @@ Stato del porting Flutter → Vue (fasi):
    Analisi; **Impostazioni solo dal menu della foto** (anello sull'avatar e
    pallino sulla voce). Notifiche con pillole, anteprima "Come le vedrai" e
    riga riassuntiva nel menu. Provato su SQLite, **non** pubblicato.
+9. ✅ demoV4 (2026-11-25, §23): il "+" della barra (anche al computer) apre il
+   **foglio "Nuovo movimento"** sopra la pagina: `components/MovimentoSheet.vue`
+   (`<dialog>` montato in `App.vue`) che riusa `views/transazioni.vue` con la
+   prop `foglio`; si apre con `useMovimentoStore().apri({ tipo, verso, ricorrente, id })`.
+   Dopo il salvataggio sale `mov.versione`: **una pagina che mostra movimenti la
+   guarda e si ricarica** (Home, Transazioni, Salvadanaio, Categorie, Ricorrenti).
+   Su telefono `/transazioni` è solo lo storico (form e modifica nel foglio);
+   al computer resta il form nella pagina. Box Entrate/Uscite della Home
+   cliccabili; testata dell'Anno con la casa.
 
 ## Struttura repository
 
@@ -481,7 +490,8 @@ non ha effetto e non dà errori (era successo: lo ha scoperto il test e2e).
   `#aspetto`, `#export`, `#notifiche`, `#ai`); i vecchi indirizzi
   (`/impostazioni/ai`, `/ricorrenti`, `/export`) reindirizzano lì.
 - **Transazioni**: `/transazioni/:id` apre la modifica nello stesso foglio;
-  `?tipo=entrata|uscita|versamento` e `?ricorrente=1` precompilano il form.
+  `?tipo=entrata|uscita|versamento|salvadanaio[&verso=<id>]` e `?ricorrente=1`
+  precompilano il form (su telefono aprono il foglio sopra lo storico).
 - **Condiviso**: chi guarda è `creatore` o `membro` (`walletStore.mioRuolo`); le
   quote sono salvate dal punto di vista del creatore e si girano in
   `utils/conti.js` (`miaQuota`, `bilancio(…, io)`). Il conto tra voi conta tutti

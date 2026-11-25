@@ -1,5 +1,6 @@
 <script setup>
 import Wheader from "./components/Wheader.vue";
+import MovimentoSheet from "./components/MovimentoSheet.vue";
 import { useAuthStore } from "@/stores/auth.js";
 
 const auth = useAuthStore();
@@ -34,4 +35,5 @@ const auth = useAuthStore();
   <main class="mx-auto w-full max-w-[1200px] px-4 pt-8 pb-36 sm:px-6 sm:pt-12 sm:pb-40">
     <router-view />
   </main>
+  <MovimentoSheet v-if="auth.isLoggedIn" />
 </template>

@@ -300,3 +300,6 @@ body {
 .p-toast-message .p-toast-detail { color: var(--color-inchiostro) !important; }
 /* Finestre PrimeVue (Dialog): il colore del testo è il nostro, non quello del tema Aura */
 .p-dialog { color: var(--color-testo) !important; }
+
+/* Foglio "Nuovo movimento" aperto: la pagina sotto non scorre (§23) */
+html:has(dialog.foglio-mov[open]) { overflow: hidden; }

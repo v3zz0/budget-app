@@ -15,6 +15,7 @@ import Avatar from "@/components/Avatar.vue";
 import { accettaInvito, elencaInviti, rifiutaInvito } from "@/services/condivisione.js";
 import { creaTransazione } from "@/services/transazioni.js";
 import { statoSalvadanaio } from "@/services/salvadanaio.js";
+import { useMovimentoStore } from "@/stores/movimento.js";
 import { altro, bilancio, miaQuota, saldoCassa, ultimoPareggio } from "@/utils/conti.js";
 import { isoLocale, parseImporto, testoImporto } from "@/utils/movimenti.js";
 
@@ -22,6 +23,7 @@ const router = useRouter();
 const route = useRoute();
 const toast = useToast();
 const dashboard = useDashboardStore();
+const mov = useMovimentoStore();
 const walletStore = useWalletStore();
 
 // Primo avvio: l'account lo crea l'amministratore e parte senza nulla.
@@ -45,9 +47,9 @@ async function creaPrimo() {
 // Salvadanaio del portafoglio scelto, per il blocco in fondo (progetto.md §15)
 const salvadanaio = ref(null);
 watch(
-  () => walletStore.walletId,
-  async (id) => {
-    salvadanaio.value = null;
+  [() => walletStore.walletId, () => mov.versione],
+  async ([id], [prima] = []) => {
+    if (id !== prima) salvadanaio.value = null;
     if (id) salvadanaio.value = await statoSalvadanaio(id).catch(() => null);
   },
   { immediate: true },
@@ -57,7 +59,7 @@ const totaleSalvadanaio = computed(() => cartelle.value.reduce((s, c) => s + c.s
 // I tre salvadanai più ricchi
 const piuRicchi = computed(() => [...cartelle.value].sort((a, b) => b.saldo - a.saldo).slice(0, 3));
 
-watch(() => walletStore.walletId, (id) => id && dashboard.carica(id), { immediate: true });
+watch([() => walletStore.walletId, () => mov.versione], ([id]) => id && dashboard.carica(id), { immediate: true });
 
 // Link di una notifica di sforamento: ?portafoglio=&categoria=&mese=AAAA-MM
 const evidenzia = ref(null);
@@ -286,14 +288,14 @@ const breve = (d) => `${Number(d.slice(8, 10))} ${nome.value.slice(0, 3).toLower
               <div class="flex justify-between text-[13.5px] font-medium"><span>Speso {{ spesoPct }}%</span><span>Resta {{ Math.max(0, 100 - spesoPct) }}%</span></div>
             </div>
           </article>
-          <article class="blocco reveal col-span-6 flex min-h-[148px] flex-col justify-between gap-6 bg-salvia sm:min-h-[176px] min-[981px]:col-span-3" style="--i: 1">
+          <button type="button" class="blocco scorciatoia reveal col-span-6 flex min-h-[148px] flex-col justify-between gap-6 text-left bg-salvia sm:min-h-[176px] min-[981px]:col-span-3" style="--i: 1" :aria-label="`Entrate ${variazione(tot.entrate, prima.entrate, mesePrima)} ${eur(tot.entrate)}, aggiungi un'entrata`" @click="mov.apri({ tipo: 'entrata' })">
             <div class="flex flex-wrap items-start justify-between gap-2"><span class="text-[15px] font-medium">Entrate</span><span class="chip whitespace-nowrap">{{ variazione(tot.entrate, prima.entrate, mesePrima) }}</span></div>
             <div class="text-[clamp(20px,7vw,28px)] leading-none whitespace-nowrap sm:text-[40px]"><Euro :v="tot.entrate" /></div>
-          </article>
-          <article class="blocco reveal col-span-6 flex min-h-[148px] flex-col justify-between gap-6 bg-arancio sm:min-h-[176px] min-[981px]:col-span-3" style="--i: 2">
+          </button>
+          <button type="button" class="blocco scorciatoia reveal col-span-6 flex min-h-[148px] flex-col justify-between gap-6 text-left bg-arancio sm:min-h-[176px] min-[981px]:col-span-3" style="--i: 2" :aria-label="`Uscite ${variazione(tot.uscite, prima.uscite, mesePrima)} ${eur(tot.uscite)}, aggiungi un'uscita`" @click="mov.apri({ tipo: 'uscita' })">
             <div class="flex flex-wrap items-start justify-between gap-2"><span class="text-[15px] font-medium">Uscite</span><span class="chip whitespace-nowrap">{{ variazione(tot.uscite, prima.uscite, mesePrima) }}</span></div>
             <div class="text-[clamp(20px,7vw,28px)] leading-none whitespace-nowrap sm:text-[40px]"><Euro :v="tot.uscite" /></div>
-          </article>
+          </button>
           <!-- Condiviso: la cassa comune al posto del tasso di risparmio -->
           <article v-if="condiviso" class="blocco reveal col-span-12 flex flex-col justify-between gap-5 bg-ardesia text-su-inchiostro min-[981px]:col-span-6" style="--i: 3">
             <div class="flex items-start justify-between gap-4"><span class="text-[15px] font-medium">Cassa comune</span><i class="ph-bold ph-vault text-[22px]" /></div>
@@ -320,16 +322,17 @@ const breve = (d) => `${Number(d.slice(8, 10))} ${nome.value.slice(0, 3).toLower
 
         <!-- Scorciatoie -->
         <section class="mb-12 grid gap-2 sm:mb-16 sm:grid-cols-2 sm:gap-3" aria-label="Registra un movimento">
-          <router-link
+          <button
             v-for="a in [{ t: 'entrata', l: 'Aggiungi entrata', i: 'ph-plus', c: 'bg-salvia' }, { t: 'uscita', l: 'Aggiungi uscita', i: 'ph-minus', c: 'bg-arancio' }]"
             :key="a.t"
-            :to="`/transazioni?tipo=${a.t}`"
+            type="button"
+            @click="mov.apri({ tipo: a.t })"
             class="group reveal flex h-[68px] items-center gap-4 rounded-full bg-card pr-6 pl-3 transition hover:bg-campo active:scale-[.985] sm:h-[76px]"
           >
             <span class="grid h-[46px] w-[46px] flex-none place-items-center rounded-full text-[22px] text-inchiostro sm:h-[52px] sm:w-[52px]" :class="a.c"><i class="ph-bold" :class="a.i" /></span>
             <b class="flex-1 text-[17px] font-semibold tracking-[-0.015em]">{{ a.l }}</b>
             <i class="ph-bold ph-arrow-right text-lg text-testo3 transition group-hover:translate-x-[3px] group-hover:text-testo" />
-          </router-link>
+          </button>
         </section>
 
         <div class="mb-12 grid grid-cols-[minmax(0,1fr)] gap-3 sm:mb-16 min-[981px]:grid-cols-[7fr_5fr]">
@@ -491,3 +494,9 @@ const breve = (d) => `${Number(d.slice(8, 10))} ${nome.value.slice(0, 3).toLower
     </Dialog>
   </div>
 </template>
+
+<style scoped>
+.scorciatoia { transition: transform 0.15s, box-shadow 0.15s; cursor: pointer; }
+.scorciatoia:hover { box-shadow: inset 0 0 0 2px var(--color-inchiostro-linea); }
+.scorciatoia:active { transform: scale(0.985); }
+</style>

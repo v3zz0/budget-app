@@ -1,4 +1,5 @@
 <script setup>
+import { useMovimentoStore } from "@/stores/movimento.js";
 import { computed, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useConfirm } from "primevue/useconfirm";
@@ -16,6 +17,7 @@ const route = useRoute();
 const confirm = useConfirm();
 const toast = useToast();
 const walletStore = useWalletStore();
+const mov = useMovimentoStore();
 const avviso = (severity, summary, detail) => toast.add({ severity, summary, detail, life: 3500 });
 
 const lista = ref([]);
@@ -43,6 +45,7 @@ async function carica(walletId = walletStore.walletId) {
   }
 }
 watch(() => walletStore.walletId, (id) => ((aperta.value = null), carica(id)), { immediate: true });
+watch(() => mov.versione, () => carica());
 
 // Link di una notifica di scadenza (?scadenza=<id>): apre quella riga.
 watch([() => route.query.scadenza, lista], ([id]) => {
@@ -134,7 +137,7 @@ function interrompi(t) {
   <section class="panel">
     <div class="mb-5 flex flex-wrap items-center justify-between gap-4">
       <h3 class="text-[17px] font-semibold tracking-[-0.015em]">Ogni mese</h3>
-      <router-link to="/transazioni?ricorrente=1" class="pill-btn pill-btn--ghost h-11! px-5!"><i class="ph-bold ph-plus" />Nuova ricorrente</router-link>
+      <button type="button" class="pill-btn pill-btn--ghost h-11! px-5!" @click="mov.apri({ ricorrente: true })"><i class="ph-bold ph-plus" />Nuova ricorrente</button>
     </div>
 
     <div v-if="errore" class="box-errore">{{ errore }}</div>

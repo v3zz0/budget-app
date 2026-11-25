@@ -79,12 +79,15 @@ const suggerimento = (m) =>
 
 <template>
   <div>
-    <div class="mb-8 flex flex-wrap items-end justify-between gap-4 sm:mb-10">
+    <!-- Testata come la Home (§23): su telefono i tasti sempre sotto, a sinistra -->
+    <div class="mb-8 flex flex-wrap items-end justify-between gap-4 max-[640px]:flex-col max-[640px]:items-start sm:mb-10">
       <div>
-        <router-link to="/" class="mb-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-testo2 hover:text-testo"><i class="ph-bold ph-arrow-left" />Home</router-link>
+        <router-link to="/" class="mb-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-testo2 hover:text-testo"><i class="ph-bold ph-arrow-left" />Torna alla home</router-link>
         <h1 class="display">Anno <span class="text-testo3">{{ anno }}</span></h1>
       </div>
       <div class="flex gap-2">
+        <router-link to="/" class="circle-btn" aria-label="Torna alla home" title="Torna alla home"><i class="ph-bold ph-house" /></router-link>
+        <span class="mx-1 h-6 w-px self-center bg-bordo-forte" aria-hidden="true" />
         <button class="circle-btn" aria-label="Anno precedente" @click="cambiaAnno(-1)"><i class="ph-bold ph-caret-left" /></button>
         <button class="circle-btn disabled:opacity-40" aria-label="Anno successivo" :disabled="anno >= annoCorrente" @click="cambiaAnno(1)"><i class="ph-bold ph-caret-right" /></button>
       </div>
